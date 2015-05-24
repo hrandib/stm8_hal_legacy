@@ -178,11 +178,11 @@ namespace Mcudrv
 			template <uint16_t divider, Cfg config = Default>
 			static void Init()
 			{
-//				*reinterpret_cast<volatile uint16_t*>(&TIM1->PSCRH) = divider - 1;
 				TIM1->PSCRH = (divider - 1) >> 8UL;
 				TIM1->PSCRL = divider - 1;
 				TIM1->CR1 = config;
 				TIM1->CR2 = config >> 8u;
+				TIM1->BKR |= TIM1_BKR_MOE;
 			}
 
 			#pragma inline=forced
@@ -221,7 +221,7 @@ namespace Mcudrv
 			template <Ints flag>
 			static void ClearIntFlag()
 			{
-				TIM2->SR1 &= ~flag;
+				TIM1->SR1 &= ~flag;
 			}
 
 			#pragma inline=forced
@@ -276,9 +276,9 @@ namespace Mcudrv
 				BOOST_STATIC_ASSERT(type == Output);
 				if(Ch == All_Ch)
 				{
-					TIM2->CCMR1 = TIM2->CCMR2 = TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+					TIM1->CCMR1 = TIM1->CCMR2 = TIM1->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
 				}
-				else *reinterpret_cast<volatile uint8_t*>(&TIM2->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+				else *reinterpret_cast<volatile uint8_t*>(&TIM1->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
 			}
 			
 			#pragma inline=forced
@@ -316,7 +316,34 @@ namespace Mcudrv
 				if (Ch & Ch2 == Ch2) TIM1->CCER1 |= TIM1_CCER1_CC2NE | ((level << 3) << 4);
 				if (Ch & Ch1 == Ch1) TIM1->CCER1 |= TIM1_CCER1_CC1NE | (level << 3);
 			}
- 		};
+ 		
+			#pragma inline=forced
+			template<Channel Ch>
+			static void WriteCompare(uint16_t c)
+			{
+				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1H + Ch * 2) = c >> 8;
+				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
+			}
+			#pragma inline=forced
+			template<Channel Ch>
+			static void WriteCompareLSB(uint8_t c)
+			{
+				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
+			}
+			#pragma inline=forced
+			template<Channel Ch>
+			static uint16_t ReadCompare()
+			{
+				return *reinterpret_cast<volatile uint16_t*>(&TIM1->CCR1H + Ch * 2);
+			}
+			#pragma inline=forced
+			template<Channel Ch>
+			static uint8_t ReadCompareLSB()
+			{
+				return *reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2);
+			}
+
+		};
 
 	}
 

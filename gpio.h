@@ -4,6 +4,7 @@
 
 namespace Mcudrv
 {
+
 	namespace Exti
 	{
 		enum Port
@@ -35,7 +36,14 @@ namespace Mcudrv
 		void ClearExtIntMode()
 		{
 			if (port == Porte) EXTI->CR2 &= ~(0x0F);
-			else EXTI->CR1 |= ~(0x0F << (port * 2));
+			else EXTI->CR1 &= ~(0x0F << (port * 2));
+		}
+		
+		#pragma inline=forced
+		template<typename port, Cfg cfg>
+		void SetExtIntMode()
+		{
+			SetExtIntMode<static_cast<Exti::Port>(port::id), cfg>();
 		}
 	}
 
@@ -73,7 +81,7 @@ namespace Mcudrv
 		typedef Gpio Base;
 		typedef uint8_t DataT;
 		enum{ Width = 8 };
-		static const uint8_t port_id = ID;
+		enum{ id = ID };
 
 		#pragma inline=forced
 		template <uint8_t mask, Cfg cfg>
@@ -185,7 +193,7 @@ namespace Mcudrv
 	PORTDEF(I, 8);
 
 	#define GPIOZ_BaseAddress 0
-	PORTDEF(Z, 0xff);					//nullport
+	PORTDEF(Z, 0xff);					//null port
 
 	template <typename PORT, uint8_t MASK>
 	class TPin
@@ -193,7 +201,7 @@ namespace Mcudrv
 	public:
 		typedef PORT Port;
 		enum { Mask = MASK };
-		enum { port_id = Port::port_id };
+		enum { port_id = Port::id };
 		
 		#pragma inline=forced
 		template <GpioBase::Cfg cfg>

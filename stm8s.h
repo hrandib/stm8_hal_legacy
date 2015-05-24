@@ -2633,7 +2633,7 @@ CFG_TypeDef;
  #define wfi()                 {_asm("wfi\n");}  /* Wait For Interrupt */
  #define halt()                {_asm("halt\n");} /* Halt */
 #else /*_IAR_*/
- #include <c:\Program Files (x86)\IAR Systems\Embedded Workbench 6.5\stm8\inc\c\intrinsics.h>
+ #include <intrinsics.h>
  #define enableInterrupts()    __enable_interrupt()   /* enable interrupts */
  #define disableInterrupts()   __disable_interrupt()  /* disable interrupts */
  #define rim()                 __enable_interrupt()   /* enable interrupts */
