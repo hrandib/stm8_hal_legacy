@@ -1,7 +1,6 @@
 #pragma once
 #include "stm8s.h"
 #include "static_assert.h"
-#include <stdint.h>
 
 namespace Mcudrv
 {

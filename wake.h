@@ -6,14 +6,7 @@
 #include "flash.h"
 
 #ifndef DEPIN
-#define DEPIN Nullpin
-#endif
-
-#ifdef __VS12
-#define __interrupt
-#define __enable_interrupt()
-#define __weak
-#define __no_init
+#define DEPIN Mcudrv::Nullpin
 #endif
 
 namespace Mcudrv
@@ -38,21 +31,21 @@ namespace Mcudrv
 
 		enum State
 		{
-			WAIT_FEND = 0,     //ожидание приема FEND
-			SEND_IDLE = 0,											//состояние бездействия
-			ADDR,     //ожидание приема адреса						//передача адреса
-			CMD,      //ожидание приема команды						//передача команды
-			NBT,      //ожидание приема количества байт в пакете	//передача количества байт в пакете
-			DATA,     //прием данных								//передача данных
-			CRC,      //ожидание окончания приема CRC				//передача CRC
-			CARR	   //ожидание несущей							//окончание передачи пакета
+			WAIT_FEND = 0,     //РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° FEND
+			SEND_IDLE = 0,											//СЃРѕСЃС‚РѕСЏРЅРёРµ Р±РµР·РґРµР№СЃС‚РІРёСЏ
+			ADDR,     //РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° Р°РґСЂРµСЃР°						//РїРµСЂРµРґР°С‡Р° Р°РґСЂРµСЃР°
+			CMD,      //РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° РєРѕРјР°РЅРґС‹						//РїРµСЂРµРґР°С‡Р° РєРѕРјР°РЅРґС‹
+			NBT,      //РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° РєРѕР»РёС‡РµСЃС‚РІР° Р±Р°Р№С‚ РІ РїР°РєРµС‚Рµ	//РїРµСЂРµРґР°С‡Р° РєРѕР»РёС‡РµСЃС‚РІР° Р±Р°Р№С‚ РІ РїР°РєРµС‚Рµ
+			DATA,     //РїСЂРёРµРј РґР°РЅРЅС‹С…								//РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С…
+			CRC,      //РѕР¶РёРґР°РЅРёРµ РѕРєРѕРЅС‡Р°РЅРёСЏ РїСЂРёРµРјР° CRC				//РїРµСЂРµРґР°С‡Р° CRC
+			CARR	   //РѕР¶РёРґР°РЅРёРµ РЅРµСЃСѓС‰РµР№							//РѕРєРѕРЅС‡Р°РЅРёРµ РїРµСЂРµРґР°С‡Рё РїР°РєРµС‚Р°
 		};
 
 		enum Cmd
 		{
-			C_NOP,    //нет операции
-			C_ERR,    //ошибка приема пакета
-			C_ECHO,    //передать эхо
+			C_NOP,    //РЅРµС‚ РѕРїРµСЂР°С†РёРё
+			C_ERR,    //РѕС€РёР±РєР° РїСЂРёРµРјР° РїР°РєРµС‚Р°
+			C_ECHO,    //РїРµСЂРµРґР°С‚СЊ СЌС…Рѕ
 			C_GETINFO,
 			C_SETADDRESS,
 			C_SAVESETTINGS,
@@ -75,6 +68,19 @@ namespace Mcudrv
 			ERR_CNOTIMPL	//Command not impl
 		};
 
+		struct NullModule
+		{
+			static void Process() { }
+		};
+
+		template<typename Module1 = NullModule, typename Module2 = NullModule, typename Module3 = NullModule,
+				 typename Module4 = NullModule, typename Module5 = NullModule, typename Module6 = NullModule>
+		struct ModuleList
+		{
+			static void Process() {}
+		};
+
+
 		template<typename Uart>
 		struct WakeTraits
 		{
@@ -89,7 +95,7 @@ namespace Mcudrv
 			enum{SingleWireOnlyForUART1 = Uarts::SingleWireMode};
 	 	};
 
-		template<typename Uart, typename DEpin = DEPIN, uint8_t bufsize = 50/*sizeof(DEVICEINFO)*/, Uarts::BaudRate baud = 9600UL, Mode mode = Slave>	//TODO: Master mode
+		template<typename Uart, typename DEpin = DEPIN, uint8_t bufsize = 50 , Uarts::BaudRate baud = 9600UL, Mode mode = Slave>	//TODO: Master mode
 		class Wake
 		{
 		private:
@@ -100,7 +106,7 @@ namespace Mcudrv
 					else pdata.crc = (pdata.crc >> 1) & ~0x80;
 			}
 			#pragma data_alignment=4
-			static uint8_t NVaddr @ ".eeprom.noinit";
+			static uint8_t NVaddr  @ ".eeprom.noinit";
 			static uint8_t addr;
 			static uint8_t prev_byte;
 			static State state;				//Current tranfer mode
@@ -167,10 +173,10 @@ namespace Mcudrv
 			static void Send()
 			{
 				using namespace Uarts;
-				UartTraits<DEpin>::Set(); //переключение RS-485 на передачу
+				UartTraits<DEpin>::Set(); //РїРµСЂРµРєР»СЋС‡РµРЅРёРµ RS-485 РЅР° РїРµСЂРµРґР°С‡Сѓ
 				char data_byte = FEND;
-				pdata.crc = CRC_INIT;           //инициализация CRC,
-				Crc8(data_byte);		//обновление CRC
+				pdata.crc = CRC_INIT;           //РёРЅРёС†РёР°Р»РёР·Р°С†РёСЏ CRC,
+				Crc8(data_byte);		//РѕР±РЅРѕРІР»РµРЅРёРµ CRC
 				Uart::GetBaseAddr()->DR = data_byte;
 				state = ADDR;
 				prev_byte = TFEND;
@@ -187,75 +193,75 @@ namespace Mcudrv
 					Uart::template ClearEvent<TxComplete>();
 					Uart::template ClearEvent<Rxne>();
 					Uart::template EnableInterrupt<RxneInt>();
-					UartTraits<DEpin>::Clear();		//переключение RS-485 на прием
+					UartTraits<DEpin>::Clear();		//РїРµСЂРµРєР»СЋС‡РµРЅРёРµ RS-485 РЅР° РїСЂРёРµРј
 					activity = false;
 				}
 				else //if (Uart::template IsEvent<Uarts::TxEmpty>())
 				{
 					char data_byte;
-					if(prev_byte == FEND)               //если производится стаффинг,
+					if(prev_byte == FEND)               //РµСЃР»Рё РїСЂРѕРёР·РІРѕРґРёС‚СЃСЏ СЃС‚Р°С„С„РёРЅРі,
 					{
-						data_byte = TFEND;                //передача TFEND вместо FEND
+						data_byte = TFEND;                //РїРµСЂРµРґР°С‡Р° TFEND РІРјРµСЃС‚Рѕ FEND
 						prev_byte = data_byte;
 						Uart::GetBaseAddr()->DR = data_byte;
 						return;
 					}
-					if(prev_byte == FESC)               //если производится стаффинг,
+					if(prev_byte == FESC)               //РµСЃР»Рё РїСЂРѕРёР·РІРѕРґРёС‚СЃСЏ СЃС‚Р°С„С„РёРЅРі,
 					{
-						data_byte = TFESC;                //передача TFESC вместо FESC
+						data_byte = TFESC;                //РїРµСЂРµРґР°С‡Р° TFESC РІРјРµСЃС‚Рѕ FESC
 						prev_byte = data_byte;
 						Uart::GetBaseAddr()->DR = data_byte;
 						return;
 					}
 					switch(state)
 					{
-					case ADDR:                     //-----> передача адреса	
+					case ADDR:                     //-----> РїРµСЂРµРґР°С‡Р° Р°РґСЂРµСЃР°	
 									//TODO: Implement differences master to slave
 						{
 							state = CMD;
-							if(pdata.addr)                   //если адрес не равен нулю,
+							if(pdata.addr)                   //РµСЃР»Рё Р°РґСЂРµСЃ РЅРµ СЂР°РІРµРЅ РЅСѓР»СЋ,
 							{
-								data_byte = addr; //то он передается (бит 7 равен единице)
+								data_byte = addr; //С‚Рѕ РѕРЅ РїРµСЂРµРґР°РµС‚СЃСЏ (Р±РёС‚ 7 СЂР°РІРµРЅ РµРґРёРЅРёС†Рµ)
 								break;
 							}
-								//иначе сразу передаем команду
+								//РёРЅР°С‡Рµ СЃСЂР°Р·Сѓ РїРµСЂРµРґР°РµРј РєРѕРјР°РЅРґСѓ
 						}
-					case CMD:                      //-----> передача команды
+					case CMD:                      //-----> РїРµСЂРµРґР°С‡Р° РєРѕРјР°РЅРґС‹
 						{
 							data_byte = pdata.cmd & 0x7F;
 							state = NBT;
 							break;
 						}
-					case NBT:                      //-----> передача количества байт
+					case NBT:                      //-----> РїРµСЂРµРґР°С‡Р° РєРѕР»РёС‡РµСЃС‚РІР° Р±Р°Р№С‚
 						{
 							data_byte = pdata.dsize;
 							state = DATA;
-							ptr = 0;                  //обнуление указателя данных для передачи
+							ptr = 0;                  //РѕР±РЅСѓР»РµРЅРёРµ СѓРєР°Р·Р°С‚РµР»СЏ РґР°РЅРЅС‹С… РґР»СЏ РїРµСЂРµРґР°С‡Рё
 							break;
 						}
-					case DATA:                     //-----> передача данных
+					case DATA:                     //-----> РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С…
 						{
 							if(ptr < pdata.dsize)
 								data_byte = pdata.buf[ptr++];
 							else
 							{
-								data_byte = pdata.crc;        //передача CRC
+								data_byte = pdata.crc;        //РїРµСЂРµРґР°С‡Р° CRC
 								state = CRC;
 							}
 							break;
 						}
 					default:
 						{
-							state = SEND_IDLE;          //передача пакета завершена
+							state = SEND_IDLE;          //РїРµСЂРµРґР°С‡Р° РїР°РєРµС‚Р° Р·Р°РІРµСЂС€РµРЅР°
 							Uart::template DisableInterrupt<TxEmptyInt>();
 						}
 					}
-					Crc8(data_byte);     //обновление CRC
-					if (state == CMD)			//Метка адреса
+					Crc8(data_byte);     //РѕР±РЅРѕРІР»РµРЅРёРµ CRC
+					if (state == CMD)			//РњРµС‚РєР° Р°РґСЂРµСЃР°
 						data_byte |= 0x80;
-					prev_byte = data_byte;              //сохранение пре-байта
+					prev_byte = data_byte;              //СЃРѕС…СЂР°РЅРµРЅРёРµ РїСЂРµ-Р±Р°Р№С‚Р°
 					if(data_byte == FEND)// || data_byte == FESC)
-						data_byte = FESC;                 //передача FESC, если нужен стаффинг
+						data_byte = FESC;                 //РїРµСЂРµРґР°С‡Р° FESC, РµСЃР»Рё РЅСѓР¶РµРЅ СЃС‚Р°С„С„РёРЅРі
 					Uart::GetBaseAddr()->DR = data_byte;
 				}
 			}
@@ -264,116 +270,116 @@ namespace Mcudrv
 			static void RxIRQ()
 			{
 				using namespace Uarts;
-				bool error = Uart::template IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //чтение флагов ошибок
-				uint8_t data_byte = Uart::GetBaseAddr()->DR;              //чтение данных
+				bool error = Uart::template IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //С‡С‚РµРЅРёРµ С„Р»Р°РіРѕРІ РѕС€РёР±РѕРє
+				uint8_t data_byte = Uart::GetBaseAddr()->DR;              //С‡С‚РµРЅРёРµ РґР°РЅРЅС‹С…
 
-				if(error)     //если обнаружены ошибки при приеме байта
+				if(error)     //РµСЃР»Рё РѕР±РЅР°СЂСѓР¶РµРЅС‹ РѕС€РёР±РєРё РїСЂРё РїСЂРёРµРјРµ Р±Р°Р№С‚Р°
 				{	
-					state = WAIT_FEND;            //ожидание нового пакета
-					cmd = C_ERR;                //рапортуем об ошибке
+					state = WAIT_FEND;            //РѕР¶РёРґР°РЅРёРµ РЅРѕРІРѕРіРѕ РїР°РєРµС‚Р°
+					cmd = C_ERR;                //СЂР°РїРѕСЂС‚СѓРµРј РѕР± РѕС€РёР±РєРµ
 					return;
 				}
 
-				if(data_byte == FEND)               //если обнаружено начало фрейма,
+				if(data_byte == FEND)               //РµСЃР»Рё РѕР±РЅР°СЂСѓР¶РµРЅРѕ РЅР°С‡Р°Р»Рѕ С„СЂРµР№РјР°,
 				{
-					prev_byte = data_byte;          //то сохранение пре-байта,
-					pdata.crc = CRC_INIT;           //инициализация CRC,
-					state = ADDR;					//сброс указателя данных,
-					Crc8(data_byte);	//обновление CRC,
+					prev_byte = data_byte;          //С‚Рѕ СЃРѕС…СЂР°РЅРµРЅРёРµ РїСЂРµ-Р±Р°Р№С‚Р°,
+					pdata.crc = CRC_INIT;           //РёРЅРёС†РёР°Р»РёР·Р°С†РёСЏ CRC,
+					state = ADDR;					//СЃР±СЂРѕСЃ СѓРєР°Р·Р°С‚РµР»СЏ РґР°РЅРЅС‹С…,
+					Crc8(data_byte);	//РѕР±РЅРѕРІР»РµРЅРёРµ CRC,
 					activity = true;
-					return;                         //выход
+					return;                         //РІС‹С…РѕРґ
 				}
 
-				if(state == WAIT_FEND)          //-----> если ожидание FEND,
+				if(state == WAIT_FEND)          //-----> РµСЃР»Рё РѕР¶РёРґР°РЅРёРµ FEND,
 				{
-					return;				//то выход
+					return;				//С‚Рѕ РІС‹С…РѕРґ
 				}
 
-				char Pre = prev_byte;               //сохранение старого пре-байта
-				prev_byte = data_byte;              //обновление пре-байта
+				char Pre = prev_byte;               //СЃРѕС…СЂР°РЅРµРЅРёРµ СЃС‚Р°СЂРѕРіРѕ РїСЂРµ-Р±Р°Р№С‚Р°
+				prev_byte = data_byte;              //РѕР±РЅРѕРІР»РµРЅРёРµ РїСЂРµ-Р±Р°Р№С‚Р°
 				
-				if(Pre == FESC)                     //если пре-байт равен FESC,
+				if(Pre == FESC)                     //РµСЃР»Рё РїСЂРµ-Р±Р°Р№С‚ СЂР°РІРµРЅ FESC,
 				{
-					if(data_byte == TFESC)            //а байт данных равен TFESC,
-						data_byte = FESC;               //то заменить его на FESC
-					else if(data_byte == TFEND)       //если байт данных равен TFEND,
-						data_byte = FEND;          //то заменить его на FEND
+					if(data_byte == TFESC)            //Р° Р±Р°Р№С‚ РґР°РЅРЅС‹С… СЂР°РІРµРЅ TFESC,
+						data_byte = FESC;               //С‚Рѕ Р·Р°РјРµРЅРёС‚СЊ РµРіРѕ РЅР° FESC
+					else if(data_byte == TFEND)       //РµСЃР»Рё Р±Р°Р№С‚ РґР°РЅРЅС‹С… СЂР°РІРµРЅ TFEND,
+						data_byte = FEND;          //С‚Рѕ Р·Р°РјРµРЅРёС‚СЊ РµРіРѕ РЅР° FEND
 					else
 					{
-						state = WAIT_FEND;     //для всех других значений байта данных,
-						cmd = C_ERR;         //следующего за FESC, ошибка
+						state = WAIT_FEND;     //РґР»СЏ РІСЃРµС… РґСЂСѓРіРёС… Р·РЅР°С‡РµРЅРёР№ Р±Р°Р№С‚Р° РґР°РЅРЅС‹С…,
+						cmd = C_ERR;         //СЃР»РµРґСѓСЋС‰РµРіРѕ Р·Р° FESC, РѕС€РёР±РєР°
 						return;
 					}
 				}
 				else
 				{
-					if(data_byte == FESC)             //если байт данных равен FESC, он просто
-						return;                         //запоминается в пре-байте
+					if(data_byte == FESC)             //РµСЃР»Рё Р±Р°Р№С‚ РґР°РЅРЅС‹С… СЂР°РІРµРЅ FESC, РѕРЅ РїСЂРѕСЃС‚Рѕ
+						return;                         //Р·Р°РїРѕРјРёРЅР°РµС‚СЃСЏ РІ РїСЂРµ-Р±Р°Р№С‚Рµ
 				}
 
 				switch(state)
 				{
-				case ADDR:                     //-----> ожидание приема адреса
+				case ADDR:                     //-----> РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° Р°РґСЂРµСЃР°
 					{
-						if(data_byte & 0x80)            //если бит 7 данных не равен нулю, то это адрес
+						if(data_byte & 0x80)            //РµСЃР»Рё Р±РёС‚ 7 РґР°РЅРЅС‹С… РЅРµ СЂР°РІРµРЅ РЅСѓР»СЋ, С‚Рѕ СЌС‚Рѕ Р°РґСЂРµСЃ
 						{
-							data_byte = data_byte & 0x7F; //обнуляем бит 7, получаем истинный адрес
-							if(data_byte == 0 || data_byte == addr) //если нулевой или верный адрес,
+							data_byte = data_byte & 0x7F; //РѕР±РЅСѓР»СЏРµРј Р±РёС‚ 7, РїРѕР»СѓС‡Р°РµРј РёСЃС‚РёРЅРЅС‹Р№ Р°РґСЂРµСЃ
+							if(data_byte == 0 || data_byte == addr) //РµСЃР»Рё РЅСѓР»РµРІРѕР№ РёР»Рё РІРµСЂРЅС‹Р№ Р°РґСЂРµСЃ,
 							{
-								Crc8(data_byte); //то обновление CRC и
+								Crc8(data_byte); //С‚Рѕ РѕР±РЅРѕРІР»РµРЅРёРµ CRC Рё
 								pdata.addr = data_byte;
-								state = CMD;       //переходим к приему команды
+								state = CMD;       //РїРµСЂРµС…РѕРґРёРј Рє РїСЂРёРµРјСѓ РєРѕРјР°РЅРґС‹
 								break;
 							}
-							state = WAIT_FEND;        //адрес не совпал, ожидание нового пакета
+							state = WAIT_FEND;        //Р°РґСЂРµСЃ РЅРµ СЃРѕРІРїР°Р», РѕР¶РёРґР°РЅРёРµ РЅРѕРІРѕРіРѕ РїР°РєРµС‚Р°
 							break;
 						}
-						else pdata.addr = 0;	//если бит 7 данных равен нулю, то
-						state = CMD;					//сразу переходим к приему команды
+						else pdata.addr = 0;	//РµСЃР»Рё Р±РёС‚ 7 РґР°РЅРЅС‹С… СЂР°РІРµРЅ РЅСѓР»СЋ, С‚Рѕ
+						state = CMD;					//СЃСЂР°Р·Сѓ РїРµСЂРµС…РѕРґРёРј Рє РїСЂРёРµРјСѓ РєРѕРјР°РЅРґС‹
 					}
-				case CMD:                      //-----> ожидание приема команды
+				case CMD:                      //-----> РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° РєРѕРјР°РЅРґС‹
 					{
-						if(data_byte & 0x80)            //проверка бита 7 данных
+						if(data_byte & 0x80)            //РїСЂРѕРІРµСЂРєР° Р±РёС‚Р° 7 РґР°РЅРЅС‹С…
 						{
-							state = WAIT_FEND;        //если бит 7 не равен нулю,
-							cmd = C_ERR;            //то ошибка
+							state = WAIT_FEND;        //РµСЃР»Рё Р±РёС‚ 7 РЅРµ СЂР°РІРµРЅ РЅСѓР»СЋ,
+							cmd = C_ERR;            //С‚Рѕ РѕС€РёР±РєР°
 							break;
 						}
-						pdata.cmd = data_byte;          //сохранение команды
-						Crc8(data_byte); //обновление CRC
-						state = NBT;           //переходим к приему количества байт
+						pdata.cmd = data_byte;          //СЃРѕС…СЂР°РЅРµРЅРёРµ РєРѕРјР°РЅРґС‹
+						Crc8(data_byte); //РѕР±РЅРѕРІР»РµРЅРёРµ CRC
+						state = NBT;           //РїРµСЂРµС…РѕРґРёРј Рє РїСЂРёРµРјСѓ РєРѕР»РёС‡РµСЃС‚РІР° Р±Р°Р№С‚
 						break;
 					}
-				case NBT:                      //-----> ожидание приема количества байт
+				case NBT:                      //-----> РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° РєРѕР»РёС‡РµСЃС‚РІР° Р±Р°Р№С‚
 					{
-						if(data_byte > bufsize)           //если количество байт > bufsize,
+						if(data_byte > bufsize)           //РµСЃР»Рё РєРѕР»РёС‡РµСЃС‚РІРѕ Р±Р°Р№С‚ > bufsize,
 						{
 							state = WAIT_FEND;
-							cmd = C_ERR;//TODO:Флаг ошибки переполнения буфера            //то ошибка	
+							cmd = C_ERR;//TODO:Р¤Р»Р°Рі РѕС€РёР±РєРё РїРµСЂРµРїРѕР»РЅРµРЅРёСЏ Р±СѓС„РµСЂР°            //С‚Рѕ РѕС€РёР±РєР°	
 							break;
 						}
 						pdata.dsize = data_byte;
-						Crc8(data_byte); //обновление CRC
-						ptr = 0;                  //обнуляем указатель данных
-						state = DATA;          //переходим к приему данных
+						Crc8(data_byte); //РѕР±РЅРѕРІР»РµРЅРёРµ CRC
+						ptr = 0;                  //РѕР±РЅСѓР»СЏРµРј СѓРєР°Р·Р°С‚РµР»СЊ РґР°РЅРЅС‹С…
+						state = DATA;          //РїРµСЂРµС…РѕРґРёРј Рє РїСЂРёРµРјСѓ РґР°РЅРЅС‹С…
 						break;
 					}
-				case DATA:                     //-----> ожидание приема данных
+				case DATA:                     //-----> РѕР¶РёРґР°РЅРёРµ РїСЂРёРµРјР° РґР°РЅРЅС‹С…
 					{
-						if(ptr < pdata.dsize)       //если не все данные приняты,
+						if(ptr < pdata.dsize)       //РµСЃР»Рё РЅРµ РІСЃРµ РґР°РЅРЅС‹Рµ РїСЂРёРЅСЏС‚С‹,
 						{
-							pdata.buf[ptr++] = data_byte; //то сохранение байта данных,
-							Crc8(data_byte);  //обновление CRC
+							pdata.buf[ptr++] = data_byte; //С‚Рѕ СЃРѕС…СЂР°РЅРµРЅРёРµ Р±Р°Р№С‚Р° РґР°РЅРЅС‹С…,
+							Crc8(data_byte);  //РѕР±РЅРѕРІР»РµРЅРёРµ CRC
 							break;
 						}
-						if(data_byte != pdata.crc)      //если приняты все данные, то проверка CRC
+						if(data_byte != pdata.crc)      //РµСЃР»Рё РїСЂРёРЅСЏС‚С‹ РІСЃРµ РґР°РЅРЅС‹Рµ, С‚Рѕ РїСЂРѕРІРµСЂРєР° CRC
 						{
-							state = WAIT_FEND;        //если CRC не совпадает,
-							cmd = C_ERR;//TODO:Флаг ошибки CRC           //то ошибка
+							state = WAIT_FEND;        //РµСЃР»Рё CRC РЅРµ СЃРѕРІРїР°РґР°РµС‚,
+							cmd = C_ERR;//TODO:Р¤Р»Р°Рі РѕС€РёР±РєРё CRC           //С‚Рѕ РѕС€РёР±РєР°
 							break;
 						}
-						state = WAIT_FEND;          //прием пакета завершен,
-						cmd = pdata.cmd;            //загрузка команды на выполнение
+						state = WAIT_FEND;          //РїСЂРёРµРј РїР°РєРµС‚Р° Р·Р°РІРµСЂС€РµРЅ,
+						cmd = pdata.cmd;            //Р·Р°РіСЂСѓР·РєР° РєРѕРјР°РЅРґС‹ РЅР° РІС‹РїРѕР»РЅРµРЅРёРµ
 						break;
 					}
 				}

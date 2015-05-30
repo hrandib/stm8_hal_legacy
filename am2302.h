@@ -5,7 +5,6 @@
 #include "gpio.h"
 #include "timers.h"
 #include "static_assert.h"
-#include <stdint.h>
 
 namespace Mcudrv
 {

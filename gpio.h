@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include "stm8s.h"
 
 namespace Mcudrv
 {

@@ -1,8 +1,6 @@
 #pragma once
 //ADC Driver 12.08.2013
 #include "stm8s.h"
-#include <stdint.h>
-
 
 namespace Mcudrv
 {

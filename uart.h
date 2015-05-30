@@ -1,7 +1,6 @@
 #pragma once
 #include "stm8s.h"
 #include "static_assert.h"
-#include <stdint.h>
 #include "gpio.h"
 #include "cstring"
 
@@ -204,7 +203,7 @@ namespace Uarts
 		{
 			enum{Div = F_CPU/baud};
 			BOOST_STATIC_ASSERT(Div <= __UINT16_T_MAX__ && Div > 0x0F);		//Divider in Range 16...65535 
-			BOOST_STATIC_ASSERT(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART2_CR5_HDSEL)); // UART2 doesn't have SingleWire mode 
+			BOOST_STATIC_ASSERT(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART1_CR5_HDSEL)); // UART2 doesn't have SingleWire mode
 			GetChar = Getch;
 			GetBaseAddr()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);		
 			GetBaseAddr()->BRR1 = (Div >> 4U) & 0xFF;
@@ -328,7 +327,7 @@ namespace Uarts
 		#pragma inline=forced
 		static void RxIRQ()
 		{
-			bool error = IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //чтение флагов ошибок
+			bool error = IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //С‡С‚РµРЅРёРµ С„Р»Р°РіРѕРІ РѕС€РёР±РѕРє
 			if(error) return;
 			uint8_t temp = GetBaseAddr()->DR;
 			if (GetChar) GetChar(temp);
