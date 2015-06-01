@@ -1,5 +1,7 @@
 #pragma once
 
+#include "timers.h"
+
 #define USE_CUSTOM_UART_IRQ
 #include "uart.h"
 #undef USE_CUSTOM_UART_IRQ
@@ -9,13 +11,108 @@
 #define DEPIN Mcudrv::Nullpin
 #endif
 
+#define INSTRUCTION_SET_VERSION 2
+#define WAKEDATABUFSIZE 64
+
 namespace Mcudrv
 {
 	namespace Wk
 	{
+
+	//			---=== Operation time counter ===---
+		class OpTime
+		{
+		private:
+			struct EepromBuf_t
+			{
+				uint16_t Dummy1;
+				uint8_t Dummy2;
+				uint8_t lvalue;
+			};
+
+			#pragma data_alignment=4
+			static EepromBuf_t eebuf[16] @ ".eeprom.noinit";
+			#pragma data_alignment=4
+			static uint16_t hvalue @ ".eeprom.noinit";
+			volatile static bool tenMinPassed;
+		public:
+			#pragma inline=forced
+			static void Init()
+			{
+				using namespace T2;
+				Timer2::Init<Div32768, CEN>();
+				Timer2::WriteAutoReload(36620UL);		//10 min period
+				Timer2::GenerateEvent<UpdEv>();			//Need to forcing prescaler settings
+				Timer2::EnableInterrupt<UpdInt>();		//
+				__no_operation();						//Need to GenerateEvent<UpdEv>() take effect,
+				Timer2::ClearIntFlag<UpdInt>();
+			}
+
+			#pragma inline=forced
+			static bool GetTenMinitesFlag()
+			{
+				return tenMinPassed;
+			}
+			#pragma inline=forced
+			static void SetTenMinutesFlag()
+			{
+				tenMinPassed = true;
+			}
+			#pragma inline=forced
+			static void ClearTenMinutesFlag()
+			{
+				tenMinPassed = false;
+			}
+			static uint8_t GetIndex()
+			{
+				uint8_t i;
+				for (i = 0; i < 15; i++)
+				{
+					if (eebuf[i + 1].lvalue != eebuf[i].lvalue + 1) break;
+				}
+				return i;
+			}
+			static void Get(volatile uint8_t *arr)
+			{
+				uint16_t temp = hvalue;
+				arr[0] = eebuf[GetIndex()].lvalue;
+				arr[1] = temp & 0xFF;
+				arr[2] = temp >> 8UL;
+			}
+
+			#pragma inline=forced
+			static void CountInc()
+			{
+				using namespace Mem;
+				uint8_t i = GetIndex();
+				uint8_t tmp = eebuf[i].lvalue + 1;
+				Unlock<Eeprom>();
+				if (IsUnlocked<Eeprom>())
+				{
+					if (i != 15) eebuf[i + 1].lvalue = tmp;
+					else eebuf[0].lvalue = tmp;
+					if (tmp == 0) hvalue++;
+				}
+				Lock<Eeprom>();
+			}
+		};
+
+		OpTime::EepromBuf_t OpTime::eebuf[16];
+		uint16_t OpTime::hvalue;
+		volatile bool OpTime::tenMinPassed;
+
+		INTERRUPT_HANDLER(TIM2_UPD_OVF_BRK_IRQHandler, 13)
+		{
+			T2::Timer2::ClearIntFlag<T2::UpdInt>();
+			OpTime::SetTenMinutesFlag();
+		}
+
+	//			---=== Wake main definitions ===---
+
 		enum
 		{
-			DefaultADDR = 0x7F,
+			DefaultADDR = 127,
+			DefaultGroupADDR = 95,
 			CRC_INIT = 0xDE,
 			FEND = 0xC0,    //Frame END
 			FESC = 0xDB,    //Frame ESCape
@@ -47,9 +144,10 @@ namespace Mcudrv
 			C_ERR,    //ошибка приема пакета
 			C_ECHO,    //передать эхо
 			C_GETINFO,
-			C_SETADDRESS,
+			C_SETNODEADDRESS,
+			C_SETGROUPADDRESS,
 			C_SAVESETTINGS,
-			C_GETUPTIME,
+			C_GETOPTIME,
 			C_OFF,
 			C_ON
 		};
@@ -61,25 +159,103 @@ namespace Mcudrv
 			ERR_BU,	//device busy error
 			ERR_RE,	//device not ready error
 			ERR_PA,	//parameters value error
+			ERR_NI,	//Command not impl
 			ERR_NR,	//no replay
 			ERR_NC,	//no carrier
 			ERR_ADDRFMT,	//new address is wrong
-			ERR_EEPROMUNLOCK, //EEPROM didn't unlock
-			ERR_CNOTIMPL	//Command not impl
+			ERR_EEPROMUNLOCK //EEPROM didn't unlock
+		};
+
+		enum DeviceType
+		{
+			devNull,
+			devLedDriver = 0x01,
+			devSwitch = 0x02,
+			devRgbDriver = 0x04,
+			devGenericIO = 0x08,
+			devSensor = 0x10,
+			devPowerSupply = 0x20,
+//			Reserved = 0x40,
+			devCustom = 0x80
+		};
+
+		enum AddrType
+		{
+			addrNode,
+			addrGroup
 		};
 
 		struct NullModule
 		{
+			enum { deviceMask = devNull, features = 0 };
+			static void Init() { }
 			static void Process() { }
+			static void SaveSettings() { }
+			static void On() { }
+			static void Off() { }
 		};
 
-		template<typename Module1 = NullModule, typename Module2 = NullModule, typename Module3 = NullModule,
+		template<typename Module1, typename Module2 = NullModule, typename Module3 = NullModule,
 				 typename Module4 = NullModule, typename Module5 = NullModule, typename Module6 = NullModule>
 		struct ModuleList
 		{
-			static void Process() {}
+			enum { devicesMask = Module1::deviceMask | Module2::deviceMask | Module3::deviceMask |
+								Module4::deviceMask | Module5::deviceMask | Module6::deviceMask };
+			static void Init()
+			{
+				Module1::Init();
+				Module2::Init();
+				Module3::Init();
+				Module4::Init();
+				Module5::Init();
+				Module6::Init();
+			}
+			static void Process()
+			{
+				Module1::Process();
+				Module2::Process();
+				Module3::Process();
+				Module4::Process();
+				Module5::Process();
+				Module6::Process();
+			}
+			static uint8_t GetDeviceFeatures(uint8_t deviceMask)
+			{
+				return deviceMask == Module1::deviceMask ? Module1::features :
+						deviceMask == Module2::deviceMask ? Module2::features :
+						deviceMask == Module3::deviceMask ? Module3::features :
+						deviceMask == Module4::deviceMask ? Module4::features :
+						deviceMask == Module5::deviceMask ? Module5::features :
+						deviceMask == Module6::deviceMask ? Module6::features : 0;
+			}
+			static void SaveSettings()		//module should be save only if settings changed
+			{
+				Module1::SaveSettings();
+				Module2::SaveSettings();
+				Module3::SaveSettings();
+				Module4::SaveSettings();
+				Module5::SaveSettings();
+				Module6::SaveSettings();
+			}
+			static void On()
+			{
+				Module1::On();
+				Module2::On();
+				Module3::On();
+				Module4::On();
+				Module5::On();
+				Module6::On();
+			}
+			static void Off()
+			{
+				Module1::Off();
+				Module2::Off();
+				Module3::Off();
+				Module4::Off();
+				Module5::Off();
+				Module6::Off();
+			}
 		};
-
 
 		template<typename Uart>
 		struct WakeTraits
@@ -95,67 +271,61 @@ namespace Mcudrv
 			enum{SingleWireOnlyForUART1 = Uarts::SingleWireMode};
 	 	};
 
-		template<typename Uart, typename DEpin = DEPIN, uint8_t bufsize = 50 , Uarts::BaudRate baud = 9600UL, Mode mode = Slave>	//TODO: Master mode
-		class Wake
+		class WakeData
+		{
+		protected:
+			struct Packet
+			{
+				uint8_t addr;
+				uint8_t cmd;
+				uint8_t dsize;
+				uint8_t buf[WAKEDATABUFSIZE];
+				uint8_t crc;
+			};
+			static volatile Packet pdata;
+			static uint8_t cmd;
+		};
+		volatile WakeData::Packet WakeData::pdata;
+		uint8_t WakeData::cmd;
+
+		template<typename Uart,
+				 typename moduleList = ModuleList<NullModule>,
+				 Uarts::BaudRate baud = 9600UL,
+				 typename DEpin = DEPIN,
+				 Mode mode = Slave>	//TODO: Master mode
+		class Wake : WakeData
 		{
 		private:
-			static void Crc8(uint8_t b)
+			static void Crc8(uint8_t b) //TODO: Table computation
 			{
 				for(char i = 0; i < 8; b = b >> 1, i++)
 					if((b ^ pdata.crc) & 1) pdata.crc = ((pdata.crc ^ 0x18) >> 1) | 0x80;
 					else pdata.crc = (pdata.crc >> 1) & ~0x80;
 			}
 			#pragma data_alignment=4
-			static uint8_t NVaddr  @ ".eeprom.noinit";
+			static uint8_t nodeAddr_nv @ ".eeprom.noinit";
+			static uint8_t groupAddr_nv @ ".eeprom.noinit";
 			static uint8_t addr;
+			static uint8_t groupaddr;
 			static uint8_t prev_byte;
 			static State state;				//Current tranfer mode
 			static uint8_t ptr;				//data pointer in Rx buffer
-			
-		public:
 			static bool activity;			//Transaction activity flag
-			static uint8_t cmd;
-			struct Packet
+			static void SetAddress(const AddrType nodeOrGroup)
 			{
-				uint8_t addr;
-				uint8_t cmd;
-				uint8_t dsize;
-				uint8_t buf[bufsize];
-				uint8_t crc;
-			};
-			static volatile Packet pdata;
-			
-			#pragma inline=forced
-			static void Init()
-			{
-				using namespace Uarts;
-				Uart::template Init<static_cast<Cfg>(Uarts::DefaultCfg | static_cast<Cfg>(WakeTraits<Uart>::SingleWireOnlyForUART1))>();		//Single Wire mode is default for UART1
-				Uart::template EnableInterrupt<DefaultInts>();
-				UartTraits<DEpin>::SetConfig();
-				uint8_t tmp = NVaddr;
-				if (tmp && tmp < 127)						//Address valid
-					addr = tmp;
-			}
-
-			#pragma inline=forced
-			static bool IsActive()
-			{
-				return activity;
-			}
-
-			static void SetAddress()
-			{
-				uint8_t taddr = pdata.buf[0];
-				if (pdata.dsize == 2 && pdata.addr)
+				if(pdata.dsize == 2 && pdata.addr)
 				{
-					if (taddr == (~pdata.buf[1] & 0xFF) && taddr && taddr < 128)
+					if(nodeOrGroup ? CheckNodeAddress() : CheckGroupAddress())
 					{
 						using namespace Mem;
+						uint8_t tempAddr = pdata.buf[0];
 						Unlock<Eeprom>();
 						if (IsUnlocked<Eeprom>())
 						{
-							NVaddr = addr = taddr;
+							if(nodeOrGroup) nodeAddr_nv = addr = tempAddr;
+							else groupAddr_nv = groupaddr = tempAddr;
 							pdata.buf[0] = ERR_NO;
+							pdata.buf[1] = tempAddr;
 						}
 						else pdata.buf[0] = ERR_EEPROMUNLOCK;
 						Lock<Eeprom>();
@@ -167,7 +337,165 @@ namespace Mcudrv
 				{
 					pdata.buf[0] = ERR_PA;
 				}
-				pdata.dsize = 1;
+				if(pdata.buf[0]) pdata.buf[1] = 0;
+			}
+			static bool CheckNodeAddress()
+			{
+				uint8_t taddr = pdata.buf[0];
+				return taddr == (~pdata.buf[1] & 0xFF)
+						&& ((taddr && taddr < 80) || (taddr > 111 && taddr < 128));
+			}
+			static bool CheckGroupAddress()
+			{
+				uint8_t taddr = pdata.buf[0];
+				return taddr == (~pdata.buf[1] & 0xFF)
+						&& taddr > 79 && taddr < 96;
+			}
+
+		public:
+			
+			#pragma inline=forced
+			static void Init()
+			{
+				using namespace Uarts;
+				Uart::template Init<static_cast<Cfg>(Uarts::DefaultCfg | static_cast<Cfg>(WakeTraits<Uart>::SingleWireOnlyForUART1))>();		//Single Wire mode is default for UART1
+				UartTraits<DEpin>::SetConfig();
+				uint8_t tmp = nodeAddr_nv;
+				if (tmp && tmp < 127)						//Address valid
+					addr = tmp;
+				tmp = groupAddr_nv;
+				if (tmp > 79 && tmp < 96)						//Address valid
+					groupaddr = tmp;
+				moduleList::Init();
+				OpTime::Init();
+				Wdg::Iwdg::Enable<Wdg::P_1s>();
+				Uart::EnableInterrupt(DefaultInts);
+			}
+
+			#pragma inline=forced
+			static void Process()
+			{
+				if (OpTime::GetTenMinitesFlag() && !IsActive())
+				{
+					OpTime::ClearTenMinutesFlag();
+					moduleList::SaveSettings();		//Save to EEPROM
+					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
+				}
+				Wdg::Iwdg::Refresh();
+				switch(cmd)
+				{
+					case C_NOP:
+						break;
+					case C_ERR:
+					{
+						activity = false;
+					}
+						break;
+					case C_ECHO:
+						break;
+					case C_GETINFO:
+					{
+						if (!pdata.dsize)	//Common device info
+						{
+							pdata.buf[0] = moduleList::devicesMask;
+							pdata.buf[1] = INSTRUCTION_SET_VERSION;
+						}
+						else if (pdata.dsize == 1)	//Info for each logical device
+						{
+							if(pdata.buf[0] < 7)
+							{
+								uint8_t deviceMask = 1 << pdata.buf[0];
+								if(moduleList::devicesMask & deviceMask) //device available
+								{
+									pdata.buf[0] = ERR_NO;
+									pdata.buf[1] = moduleList::GetDeviceFeatures(deviceMask);
+								}
+								else //device not available
+								{
+									pdata.buf[0] = ERR_PA;
+									pdata.dsize = 1;
+									break;
+								}
+							}
+							//else if(pdata.buf[0] == 7) //custom device
+						}
+						else
+						{
+							pdata.buf[0] = ERR_PA;
+							pdata.dsize = 1;
+							break;
+						}
+						pdata.dsize = 2;
+					}
+						break;
+					case C_SETNODEADDRESS: SetAddress(addrNode);
+						break;
+					case C_SETGROUPADDRESS: SetAddress(addrGroup);
+						break;
+					case C_SAVESETTINGS:
+					{
+						if(!pdata.dsize)
+						{
+							moduleList::SaveSettings();
+							pdata.buf[0] = ERR_NO;
+						}
+						else pdata.buf[0] = ERR_PA;
+						pdata.dsize = 1;
+					}
+						break;
+					case C_GETOPTIME:
+					{
+						if (!pdata.dsize)
+						{
+							pdata.buf[0] = Wk::ERR_NO;
+							OpTime::Get(&pdata.buf[1]);
+							pdata.dsize = 4;
+						}
+						else
+						{
+							pdata.buf[0] = Wk::ERR_PA;
+							pdata.dsize = 1;
+						}
+					}
+						break;
+					case C_OFF:
+					{
+						if (!pdata.dsize)
+						{
+							pdata.buf[0] = Wk::ERR_NO;
+							moduleList::Off();
+						}
+						else
+						{
+							pdata.buf[0] = Wk::ERR_PA;
+						}
+						pdata.dsize = 1;
+					}
+						break;
+					case C_ON:
+					{
+						if (!pdata.dsize)
+						{
+							pdata.buf[0] = Wk::ERR_NO;
+							moduleList::On();
+						}
+						else
+						{
+							pdata.buf[0] = Wk::ERR_PA;
+						}
+						pdata.dsize = 1;
+					}
+						break;
+					default: moduleList::Process();
+				}
+				if (pdata.addr == addr && cmd != C_NOP) Send();
+				cmd = Wk::C_NOP;
+			}
+
+			#pragma inline=forced
+			static bool IsActive()
+			{
+				return activity;
 			}
 
 			static void Send()
@@ -180,19 +508,19 @@ namespace Mcudrv
 				Uart::GetBaseAddr()->DR = data_byte;
 				state = ADDR;
 				prev_byte = TFEND;
-				Uart::template EnableInterrupt<TxEmptyInt>();
-				Uart::template DisableInterrupt<RxneInt>();
+				Uart::EnableInterrupt(TxEmptyInt);
+				Uart::DisableInterrupt(RxneInt);
 			}
 			
 			#pragma inline=forced
 			static void TxIRQ()
 			{
 				using namespace Uarts;
-				if (Uart::template IsEvent<TxComplete>())
+				if (Uart::IsEvent(TxComplete))
 				{
-					Uart::template ClearEvent<TxComplete>();
-					Uart::template ClearEvent<Rxne>();
-					Uart::template EnableInterrupt<RxneInt>();
+					Uart::ClearEvent(TxComplete);
+					Uart::ClearEvent(Rxne);
+					Uart::EnableInterrupt(RxneInt);
 					UartTraits<DEpin>::Clear();		//переключение RS-485 на прием
 					activity = false;
 				}
@@ -253,7 +581,7 @@ namespace Mcudrv
 					default:
 						{
 							state = SEND_IDLE;          //передача пакета завершена
-							Uart::template DisableInterrupt<TxEmptyInt>();
+							Uart::DisableInterrupt(TxEmptyInt);
 						}
 					}
 					Crc8(data_byte);     //обновление CRC
@@ -270,7 +598,7 @@ namespace Mcudrv
 			static void RxIRQ()
 			{
 				using namespace Uarts;
-				bool error = Uart::template IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //чтение флагов ошибок
+				bool error = Uart::IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
 				uint8_t data_byte = Uart::GetBaseAddr()->DR;              //чтение данных
 
 				if(error)     //если обнаружены ошибки при приеме байта
@@ -324,7 +652,7 @@ namespace Mcudrv
 						if(data_byte & 0x80)            //если бит 7 данных не равен нулю, то это адрес
 						{
 							data_byte = data_byte & 0x7F; //обнуляем бит 7, получаем истинный адрес
-							if(data_byte == 0 || data_byte == addr) //если нулевой или верный адрес,
+							if(data_byte == 0 || data_byte == addr || data_byte == groupaddr) //если нулевой или верный адрес,
 							{
 								Crc8(data_byte); //то обновление CRC и
 								pdata.addr = data_byte;
@@ -352,10 +680,10 @@ namespace Mcudrv
 					}
 				case NBT:                      //-----> ожидание приема количества байт
 					{
-						if(data_byte > bufsize)           //если количество байт > bufsize,
+						if(data_byte >= WAKEDATABUFSIZE)           //если количество байт > bufsize,
 						{
 							state = WAIT_FEND;
-							cmd = C_ERR;//TODO:Флаг ошибки переполнения буфера            //то ошибка	
+							cmd = C_ERR;//TODO:Флаг ошибки переполнения буфера  //то ошибка
 							break;
 						}
 						pdata.dsize = data_byte;
@@ -387,36 +715,63 @@ namespace Mcudrv
 
 		};
 
- 		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		uint8_t Wake<Uart, DEpin, bufsize, baud, mode>::addr = DefaultADDR;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		uint8_t Wake<Uart, DEpin, bufsize, baud, mode>::NVaddr;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		uint8_t Wake<Uart, DEpin, bufsize, baud, mode>::cmd;// = CMD_NOP;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		uint8_t Wake<Uart, DEpin, bufsize, baud, mode>::prev_byte;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		State Wake<Uart, DEpin, bufsize, baud, mode>::state;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		uint8_t Wake<Uart, DEpin, bufsize, baud, mode>::ptr;
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		Wake<Uart, DEpin, bufsize, baud, mode>::Packet Wake<Uart, DEpin, bufsize, baud, mode>::pdata;// = Wake<bufsize, baud, mode>::Data();
-
-		template<typename Uart, typename DEpin, uint8_t bufsize, Uarts::BaudRate baud, Mode mode>
-		bool Wake<Uart, DEpin, bufsize, baud, mode>::activity;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::addr = DefaultADDR;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupaddr = DefaultGroupADDR;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::prev_byte;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		State Wake<Uart, moduleList, baud, DEpin, mode>::state;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::ptr;
+		template<typename Uart,
+				 typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		bool Wake<Uart, moduleList, baud, DEpin, mode>::activity;
 	}
+
+
 
 #ifndef USE_CUSTOM_UART_IRQ
 
 #if defined (STM8S103) || defined (STM8S003)
 	typedef Wk::Wake<Uarts::Uart<UART1_BaseAddress> > Wake1;
-	INTERRUPT_HANDLER(UART1_TX_IRQHandler, 17)
+	INTERRUPT_HANDLER(TxIRQ, 17)
 	{
 		Wake1::TxIRQ();
 	}

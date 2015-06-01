@@ -4,7 +4,7 @@
 #include "gpio.h"
 #include "cstring"
 
-void utoa(uint16_t value, unsigned char* ptr, uint8_t base = 10);
+//void utoa(uint16_t value, unsigned char* ptr, uint8_t base = 10);
 
 namespace Mcudrv
 {
@@ -195,16 +195,16 @@ namespace Uarts
 		{
 			return reinterpret_cast<UART1_TypeDef*>(BaseAddr);
 		}
-		static cbRxFunc GetChar;
+//		static cbRxFunc GetChar;
 		
 		#pragma inline=forced
-		template<Cfg config, cbRxFunc Getch = EmptyRxFunc, BaudRate baud = 9600UL>
+		template<Cfg config, /*cbRxFunc Getch = EmptyRxFunc,*/ BaudRate baud = 9600UL>
 		static void Init()
 		{
 			enum{Div = F_CPU/baud};
 			BOOST_STATIC_ASSERT(Div <= __UINT16_T_MAX__ && Div > 0x0F);		//Divider in Range 16...65535 
 			BOOST_STATIC_ASSERT(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART1_CR5_HDSEL)); // UART2 doesn't have SingleWire mode
-			GetChar = Getch;
+//			GetChar = Getch;
 			GetBaseAddr()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);		
 			GetBaseAddr()->BRR1 = (Div >> 4U) & 0xFF;
 			GetBaseAddr()->CR1 = static_cast<uint32_t>(config) & 0xFF;
@@ -224,8 +224,7 @@ namespace Uarts
 		}
 
 		#pragma inline=forced
-		template<Events event>
-		static bool IsEvent()
+		static bool IsEvent(const Events event)
 		{
 			return GetBaseAddr()->SR & event;
 		}
@@ -237,21 +236,18 @@ namespace Uarts
 		}		
 			
 		#pragma inline=forced
-		template<Events event>
-		static void ClearEvent()
+		static void ClearEvent(const Events event)
 		{
 			GetBaseAddr()->SR &= ~event;
 		}
 
 		#pragma inline=forced
-		template <Ints mask>
-		static void EnableInterrupt()
+		static void EnableInterrupt(const Ints mask)
 		{
 			GetBaseAddr()->CR2 |= mask;
 		}
 		#pragma inline=forced
-		template <Ints mask>
-		static void DisableInterrupt()
+		static void DisableInterrupt(Ints mask)
 		{
 			GetBaseAddr()->CR2 &= ~mask;
 		}
@@ -264,7 +260,7 @@ namespace Uarts
 			size_ = size;
 			pBuf_ = buf;
 			GetBaseAddr()->DR = buf[0];
-			EnableInterrupt<TxEmptyInt>();
+			EnableInterrupt(TxEmptyInt);
 		}
 		#pragma inline=forced
 		template<typename T>
@@ -281,12 +277,12 @@ namespace Uarts
 			Putbuf(reinterpret_cast<const char*>(str), strlen(reinterpret_cast<const char*>(str)));
 		}
 
-		static void Puts(uint16_t value)
-		{
-			uint8_t buf[6];
-			utoa(value, buf);
-			Puts(buf);
-		}
+//		static void Puts(uint16_t value)
+//		{
+//			uint8_t buf[6];
+//			utoa(value, buf);
+//			Puts(buf);
+//		}
 
 		template<typename T>
 		static void Putbyte(T byte)
@@ -304,12 +300,12 @@ namespace Uarts
 		static void TxIRQ()
 		{		
 			static uint8_t count;
-			if (IsEvent<TxComplete>())
+			if (IsEvent(TxComplete))
 			{
-				ClearEvent<TxComplete>();
+				ClearEvent(TxComplete);
 				UartTraits<DEpin>::Clear();
 			}
-			else //if (IsEvent<TxEmpty>())
+			else //if (IsEvent(TxEmpty))
 			{
 				if (++count < size_)
 				{
@@ -317,7 +313,7 @@ namespace Uarts
 				}
 				else
 				{
-					DisableInterrupt<TxEmptyInt>();
+					DisableInterrupt(TxEmptyInt);
 					count = 0;
 				}
 			}
@@ -327,10 +323,10 @@ namespace Uarts
 		#pragma inline=forced
 		static void RxIRQ()
 		{
-			bool error = IsEvent<static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)>(); //чтение флагов ошибок
+			bool error = IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
 			if(error) return;
 			uint8_t temp = GetBaseAddr()->DR;
-			if (GetChar) GetChar(temp);
+//			if (GetChar) GetChar(temp);
 			//Rxbuf::Push(temp);
 			GetBaseAddr()->DR = temp;			//echo
 		}
@@ -369,8 +365,8 @@ namespace Uarts
  	uint8_t Uart<BaseAddr, DEpin>::size_;
  	template<uint16_t BaseAddr, typename DEpin>
 	uint8_t const *Uart<BaseAddr, DEpin>::pBuf_;
-	template<uint16_t BaseAddr, typename DEpin>
-	cbRxFunc Uart<BaseAddr, DEpin>::GetChar = EmptyRxFunc;
+//	template<uint16_t BaseAddr, typename DEpin>
+//	cbRxFunc Uart<BaseAddr, DEpin>::GetChar = EmptyRxFunc;
 
 #ifndef USE_CUSTOM_UART_IRQ
 #if defined (STM8S103) || defined (STM8S003)
@@ -439,7 +435,7 @@ namespace Uarts
 // 	};
 }//Uarts
 }//Mcudrv
-
+/*
 void utoa(uint16_t value, unsigned char* ptr, uint8_t base)
 {
 	uint16_t tmp_value;
@@ -449,7 +445,7 @@ void utoa(uint16_t value, unsigned char* ptr, uint8_t base)
 	do {
 		tmp_value = value;
 		value /= base;
-		*ptr++ = "0123456789abcdefghijklmnopqrstuvwxyz"[tmp_value - value * base];
+		*ptr++ = "0123456789abcdefghijklmnopqrstuvwxyz"[tmp_value - value * base]; //TODO: Eliminate string
 	} while (value);
 	*ptr-- = '\0';
 	while (ptr1 < ptr)
@@ -460,3 +456,4 @@ void utoa(uint16_t value, unsigned char* ptr, uint8_t base)
 	}
 	return;
 }
+*/
