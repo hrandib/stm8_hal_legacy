@@ -308,7 +308,7 @@ namespace Mcudrv
  		
 			#pragma inline=forced
 			template<Channel Ch>
-			static void WriteCompare(const uint16_t c)
+			static void WriteCompareWord(const uint16_t c)
 			{
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1H + Ch * 2) = c >> 8;
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
@@ -316,28 +316,41 @@ namespace Mcudrv
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static void WriteCompareLSB(const uint8_t c)
+			static void WriteCompareByte(const uint8_t c)
 			{
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
 			}
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static uint16_t ReadCompare()
+			static uint16_t ReadCompareWord()
 			{
 				return *reinterpret_cast<volatile uint16_t*>(&TIM1->CCR1H + Ch * 2);
 			}
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static uint8_t ReadCompareLSB()
+			static uint8_t ReadCompareByte()
 			{
 				return *reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2);
 			}
 
-		};
+			#pragma inline=forced
+			template<Channel Ch>
+			static volatile uint16_t& GetCompareWord()
+			{
+				return *reinterpret_cast<volatile uint16_t*>(&TIM1->CCR1H + Ch * 2);
+			}
 
-	}
+			#pragma inline=forced
+			template<Channel Ch>
+			static volatile uint8_t& GetCompareByte()
+			{
+				return *reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2);
+			}
+		}; //Timer1
+
+	} //T1
 
 	namespace T2
 	{
@@ -449,7 +462,6 @@ namespace Mcudrv
 	
 		class Timer2
 		{
-		private:
 		public:
 			template <Div divider, Cfg config>
 			static void Init()
@@ -573,26 +585,48 @@ namespace Mcudrv
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static void WriteCompareLSB(const uint8_t c)
+			static void WriteCompareWord(const uint16_t c)
+			{
+				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1H + Ch * 2) = c >> 8;
+				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2) = c;
+			}
+
+			#pragma inline=forced
+			template<Channel Ch>
+			static void WriteCompareByte(const uint8_t c)
 			{
 				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2) = c;
 			}
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static uint16_t ReadCompare()
+			static uint16_t ReadCompareWord()
 			{
 				return *reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H + Ch * 2);
 			}
 
 			#pragma inline=forced
 			template<Channel Ch>
-			static uint8_t ReadCompareLSB()
+			static uint8_t ReadCompareByte()
 			{
 				return *reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2);
 			}
-		};
-	}
+
+			#pragma inline=forced
+			template<Channel Ch>
+			static volatile uint16_t& GetCompareWord()
+			{
+				return *reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H + Ch * 2);
+			}
+
+			#pragma inline=forced
+			template<Channel Ch>
+			static volatile uint8_t& GetCompareByte()
+			{
+				return *reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2);
+			}
+		}; //Timer2
+	} //T2
 
 	namespace T4
 	{
@@ -670,7 +704,7 @@ namespace Mcudrv
 				TIM4->ARR = c;
 			}
 		};
-	}
+	} //T4
 
 	namespace Wdg
 	{
@@ -689,8 +723,7 @@ namespace Mcudrv
 		{
 		public:
 			#pragma inline=forced
-			template<Period period>
-			static void Enable()
+			static void Enable(const Period period)
 			{
 				IWDG->KR = 0xCC;
 				IWDG->KR = 0x55;

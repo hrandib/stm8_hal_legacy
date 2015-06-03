@@ -199,7 +199,7 @@ namespace Mcudrv
 				 typename Module4 = NullModule, typename Module5 = NullModule, typename Module6 = NullModule>
 		struct ModuleList
 		{
-			enum { devicesMask = Module1::deviceMask | Module2::deviceMask | Module3::deviceMask |
+			enum { devicesMask = (uint8_t)Module1::deviceMask | Module2::deviceMask | Module3::deviceMask |
 								Module4::deviceMask | Module5::deviceMask | Module6::deviceMask };
 			static void Init()
 			{
@@ -302,11 +302,10 @@ namespace Mcudrv
 					if((b ^ pdata.crc) & 1) pdata.crc = ((pdata.crc ^ 0x18) >> 1) | 0x80;
 					else pdata.crc = (pdata.crc >> 1) & ~0x80;
 			}
-			#pragma data_alignment=4
 			static uint8_t nodeAddr_nv @ ".eeprom.noinit";
 			static uint8_t groupAddr_nv @ ".eeprom.noinit";
-			static uint8_t addr;
-			static uint8_t groupaddr;
+//			static uint8_t addr;
+//			static uint8_t groupaddr;
 			static uint8_t prev_byte;
 			static State state;				//Current tranfer mode
 			static uint8_t ptr;				//data pointer in Rx buffer
@@ -323,8 +322,8 @@ namespace Mcudrv
 						Unlock<Eeprom>();
 						if (IsUnlocked<Eeprom>())
 						{
-							if(nodeOrGroup) nodeAddr_nv = addr = tempAddr;
-							else groupAddr_nv = groupaddr = tempAddr;
+							if(nodeOrGroup) nodeAddr_nv = tempAddr;
+							else groupAddr_nv = tempAddr;
 							pdata.buf[0] = ERR_NO;
 							pdata.buf[1] = tempAddr;
 						}
@@ -362,15 +361,15 @@ namespace Mcudrv
 				using namespace Uarts;
 				Uart::template Init<static_cast<Cfg>(Uarts::DefaultCfg | static_cast<Cfg>(WakeTraits<Uart>::SingleWireOnlyForUART1))>();		//Single Wire mode is default for UART1
 				UartTraits<DEpin>::SetConfig();
-				uint8_t tmp = nodeAddr_nv;
-				if (tmp && tmp < 127)						//Address valid
-					addr = tmp;
-				tmp = groupAddr_nv;
-				if (tmp > 79 && tmp < 96)						//Address valid
-					groupaddr = tmp;
+//				uint8_t tmp = nodeAddr_nv;
+//				if (tmp && tmp < 127)						//Address valid
+//					addr = tmp;
+//				tmp = groupAddr_nv;
+//				if (tmp > 79 && tmp < 96)						//Address valid
+//					groupaddr = tmp;
 				moduleList::Init();
 				OpTime::Init();
-				Wdg::Iwdg::Enable<Wdg::P_1s>();
+				Wdg::Iwdg::Enable(Wdg::P_1s);
 				Uart::EnableInterrupt(DefaultInts);
 			}
 
@@ -490,7 +489,7 @@ namespace Mcudrv
 						break;
 					default: moduleList::Process();
 				}
-				if (pdata.addr == addr && cmd != C_NOP) Send();
+				if (pdata.addr == nodeAddr_nv && cmd != C_NOP) Send();
 				cmd = Wk::C_NOP;
 			}
 
@@ -551,7 +550,7 @@ namespace Mcudrv
 							state = CMD;
 							if(pdata.addr)                   //если адрес не равен нулю,
 							{
-								data_byte = addr; //то он передается (бит 7 равен единице)
+								data_byte = nodeAddr_nv; //то он передается (бит 7 равен единице)
 								break;
 							}
 								//иначе сразу передаем команду
@@ -654,7 +653,7 @@ namespace Mcudrv
 						if(data_byte & 0x80)            //если бит 7 данных не равен нулю, то это адрес
 						{
 							data_byte = data_byte & 0x7F; //обнуляем бит 7, получаем истинный адрес
-							if(data_byte == 0 || data_byte == addr || data_byte == groupaddr) //если нулевой или верный адрес,
+							if(data_byte == 0 || data_byte == nodeAddr_nv || data_byte == groupAddr_nv) //если нулевой или верный адрес,
 							{
 								Crc8(data_byte); //то обновление CRC и
 								pdata.addr = data_byte;
@@ -722,25 +721,13 @@ namespace Mcudrv
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::addr = DefaultADDR;
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv;// = 127;
 		template<typename Uart,
 				 typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupaddr = DefaultGroupADDR;
-		template<typename Uart,
-				 typename moduleList,
-				 Uarts::BaudRate baud,
-				 typename DEpin,
-				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv;
-		template<typename Uart,
-				 typename moduleList,
-				 Uarts::BaudRate baud,
-				 typename DEpin,
-				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv;
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv;// = 95;
 		template<typename Uart,
 				 typename moduleList,
 				 Uarts::BaudRate baud,
