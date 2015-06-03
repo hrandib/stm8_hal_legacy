@@ -194,44 +194,34 @@ namespace Mcudrv
 			{
 				TIM1->CR1 &= ~TIM1_CR1_CEN;
 			}
-
 			#pragma inline=forced
-			template <Ints mask>
-			static void EnableInterrupt()
+			static void EnableInterrupt(const Ints mask)
 			{
 				TIM1->IER |= mask;
 			}
-
 			#pragma inline=forced
-			template <uint16_t mask>
-			static void DisableInterrupt()
+			static void DisableInterrupt(const Ints mask)
 			{
 				TIM1->IER &= ~mask;
 			}
-
 			#pragma inline=forced
-			template <Ints flag>
-			static bool CheckIntStatus()
+			static bool CheckIntStatus(const Ints flag)
 			{
 				return TIM1->SR1 & flag;
 			}
-
 			#pragma inline=forced
-			template <Ints flag>
-			static void ClearIntFlag()
+			static void ClearIntFlag(const Ints flag)
 			{
 				TIM1->SR1 &= ~flag;
 			}
-
 			#pragma inline=forced
-			template <Events ev>
-			static void GenerateEvent()
+			static void TriggerEvent(const Events ev)
 			{
 				TIM1->EGR |= ev;
 			}
 			
 			#pragma inline=forced
-			static void WriteCounter(uint16_t c)	//Need to stop Timer 
+			static void WriteCounter(const uint16_t c)	//Need to stop Timer
 			{
 	//			Disable();
 				TIM1->CNTRH = c >> 8;
@@ -250,7 +240,7 @@ namespace Mcudrv
 			#pragma diag_default=Pe940
 			
 			#pragma inline=forced
-			static void WriteAutoReload(uint16_t c)
+			static void WriteAutoReload(const uint16_t c)
 			{
 				TIM1->ARRH = c >> 8;
 				TIM1->ARRL = c;
@@ -318,23 +308,26 @@ namespace Mcudrv
  		
 			#pragma inline=forced
 			template<Channel Ch>
-			static void WriteCompare(uint16_t c)
+			static void WriteCompare(const uint16_t c)
 			{
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1H + Ch * 2) = c >> 8;
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
 			}
+
 			#pragma inline=forced
 			template<Channel Ch>
-			static void WriteCompareLSB(uint8_t c)
+			static void WriteCompareLSB(const uint8_t c)
 			{
 				*reinterpret_cast<volatile uint8_t*>(&TIM1->CCR1L + Ch * 2) = c;
 			}
+
 			#pragma inline=forced
 			template<Channel Ch>
 			static uint16_t ReadCompare()
 			{
 				return *reinterpret_cast<volatile uint16_t*>(&TIM1->CCR1H + Ch * 2);
 			}
+
 			#pragma inline=forced
 			template<Channel Ch>
 			static uint8_t ReadCompareLSB()
@@ -475,44 +468,33 @@ namespace Mcudrv
 			{
 				TIM2->CR1 &= ~TIM4_CR1_CEN;
 			}
-
 			#pragma inline=forced
-			template <uint16_t mask>
-			static void EnableInterrupt()
+			static void EnableInterrupt(const Ints mask)
 			{
 				TIM2->IER |= mask;
  			}
-
 			#pragma inline=forced
-			template <uint16_t mask>
-			static void DisableInterrupt()
+			static void DisableInterrupt(const Ints mask)
 			{
 				TIM2->IER &= ~mask;
 			}
-			
 			#pragma inline=forced
-			template <Events ev>
-			static void GenerateEvent()
+			static void TriggerEvent(const Events ev)
 			{
 				TIM2->EGR |= ev;
 			}
-
 			#pragma inline=forced
-			template <Ints flag>
-			static bool CheckIntStatus()
+			static bool CheckIntStatus(const Ints flag)
 			{
 				return TIM2->SR1 & flag;
 			}
-		
 			#pragma inline=forced
-			template <Ints flag>
-			static void ClearIntFlag()
+			static void ClearIntFlag(const Ints flag)
 			{
 				TIM2->SR1 &= ~flag;
 			}
-		
 			#pragma inline=forced
-			static void WriteCounter(uint16_t c)	//Need to stop Timer 
+			static void WriteCounter(const uint16_t c)	//Need to stop Timer
 			{
 	//			Disable();
 				TIM2->CNTRH = c >> 8;
@@ -531,7 +513,7 @@ namespace Mcudrv
 			#pragma diag_default=Pe940
 
 			#pragma inline=forced
-			static void WriteAutoReload(uint16_t c)
+			static void WriteAutoReload(const uint16_t c)
 			{
 				TIM2->ARRH = c >> 8;
 				TIM2->ARRL = c;
@@ -590,27 +572,25 @@ namespace Mcudrv
 			}
 
 			#pragma inline=forced
-			template <Channel Ch>
-			static void WriteCompare(uint16_t cmp)
+			template<Channel Ch>
+			static void WriteCompareLSB(const uint8_t c)
 			{
-				reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H)[Ch] = cmp;
+				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2) = c;
 			}
 
 			#pragma inline=forced
-			template <Channel Ch>
-			static void WriteCompare(uint8_t cmp)
+			template<Channel Ch>
+			static uint16_t ReadCompare()
 			{
-				reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L)[Ch*2] = cmp;
+				return *reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H + Ch * 2);
 			}
 
 			#pragma inline=forced
-			template <Channel Ch>
-			static volatile uint8_t& ReadCompare()
+			template<Channel Ch>
+			static uint8_t ReadCompareLSB()
 			{
-				return reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L)[Ch*2];
+				return *reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2);
 			}
-
-
 		};
 	}
 

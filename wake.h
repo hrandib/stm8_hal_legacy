@@ -42,10 +42,10 @@ namespace Mcudrv
 				using namespace T2;
 				Timer2::Init<Div32768, CEN>();
 				Timer2::WriteAutoReload(36620UL);		//10 min period
-				Timer2::GenerateEvent<UpdEv>();			//Need to forcing prescaler settings
-				Timer2::EnableInterrupt<UpdInt>();		//
+				Timer2::TriggerEvent(UpdEv);			//Need to forcing prescaler settings
+				Timer2::EnableInterrupt(UpdInt);		//
 				__no_operation();						//Need to GenerateEvent<UpdEv>() take effect,
-				Timer2::ClearIntFlag<UpdInt>();
+				Timer2::ClearIntFlag(UpdInt);
 			}
 
 			#pragma inline=forced
@@ -103,7 +103,7 @@ namespace Mcudrv
 
 		INTERRUPT_HANDLER(TIM2_UPD_OVF_BRK_IRQHandler, 13)
 		{
-			T2::Timer2::ClearIntFlag<T2::UpdInt>();
+			T2::Timer2::ClearIntFlag(T2::UpdInt);
 			OpTime::SetTenMinutesFlag();
 		}
 
