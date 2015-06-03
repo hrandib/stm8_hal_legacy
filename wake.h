@@ -190,7 +190,7 @@ namespace Mcudrv
 			enum { deviceMask = devNull, features = 0 };
 			static void Init() { }
 			static void Process() { }
-			static void SaveSettings() { }
+			static void SaveState() { }
 			static void On() { }
 			static void Off() { }
 		};
@@ -228,14 +228,14 @@ namespace Mcudrv
 						deviceMask == Module5::deviceMask ? Module5::features :
 						deviceMask == Module6::deviceMask ? Module6::features : 0;
 			}
-			static void SaveSettings()		//module should be save only if settings changed
+			static void SaveState()		//module should be save only if settings changed
 			{
-				Module1::SaveSettings();
-				Module2::SaveSettings();
-				Module3::SaveSettings();
-				Module4::SaveSettings();
-				Module5::SaveSettings();
-				Module6::SaveSettings();
+				Module1::SaveState();
+				Module2::SaveState();
+				Module3::SaveState();
+				Module4::SaveState();
+				Module5::SaveState();
+				Module6::SaveState();
 			}
 			static void On()
 			{
@@ -261,7 +261,7 @@ namespace Mcudrv
 		struct WakeTraits
 		{
 			static const bool isUart1 = false;
-			enum{SingleWireOnlyForUART1 = 0};
+			enum { SingleWireOnlyForUART1 = 0 };
 		};
 
 		template<>
@@ -311,6 +311,7 @@ namespace Mcudrv
 			static State state;				//Current tranfer mode
 			static uint8_t ptr;				//data pointer in Rx buffer
 			static bool activity;			//Transaction activity flag
+
 			static void SetAddress(const AddrType nodeOrGroup)
 			{
 				if(pdata.dsize == 2 && pdata.addr)
@@ -339,12 +340,14 @@ namespace Mcudrv
 				}
 				if(pdata.buf[0]) pdata.buf[1] = 0;
 			}
+			#pragma inline=forced
 			static bool CheckNodeAddress()
 			{
 				uint8_t taddr = pdata.buf[0];
 				return taddr == (~pdata.buf[1] & 0xFF)
 						&& ((taddr && taddr < 80) || (taddr > 111 && taddr < 128));
 			}
+			#pragma inline=forced
 			static bool CheckGroupAddress()
 			{
 				uint8_t taddr = pdata.buf[0];
@@ -353,7 +356,6 @@ namespace Mcudrv
 			}
 
 		public:
-			
 			#pragma inline=forced
 			static void Init()
 			{
@@ -378,7 +380,7 @@ namespace Mcudrv
 				if (OpTime::GetTenMinitesFlag() && !IsActive())
 				{
 					OpTime::ClearTenMinutesFlag();
-					moduleList::SaveSettings();		//Save to EEPROM
+					moduleList::SaveState();		//Save to EEPROM
 					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
 				}
 				Wdg::Iwdg::Refresh();
@@ -436,7 +438,7 @@ namespace Mcudrv
 					{
 						if(!pdata.dsize)
 						{
-							moduleList::SaveSettings();
+							moduleList::SaveState();
 							pdata.buf[0] = ERR_NO;
 						}
 						else pdata.buf[0] = ERR_PA;
