@@ -302,8 +302,10 @@ namespace Mcudrv
 					if((b ^ pdata.crc) & 1) pdata.crc = ((pdata.crc ^ 0x18) >> 1) | 0x80;
 					else pdata.crc = (pdata.crc >> 1) & ~0x80;
 			}
-			static uint8_t nodeAddr_nv @ ".eeprom.noinit";
-			static uint8_t groupAddr_nv @ ".eeprom.noinit";
+			#pragma location=".eeprom.data"
+			static uint8_t nodeAddr_nv;// @ ".eeprom.data";
+			#pragma location=".eeprom.data"
+			static uint8_t groupAddr_nv;// @ ".eeprom.data";
 //			static uint8_t addr;
 //			static uint8_t groupaddr;
 			static uint8_t prev_byte;
@@ -721,13 +723,13 @@ namespace Mcudrv
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv;// = 127;
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv = 127;
 		template<typename Uart,
 				 typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv;// = 95;
+		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv = 95;
 		template<typename Uart,
 				 typename moduleList,
 				 Uarts::BaudRate baud,
@@ -759,16 +761,14 @@ namespace Mcudrv
 #ifndef USE_CUSTOM_UART_IRQ
 
 #if defined (STM8S103) || defined (STM8S003)
-	typedef Wk::Wake<Uarts::Uart<UART1_BaseAddress> > Wake1;
-	INTERRUPT_HANDLER(TxIRQ, 17)
-	{
-		Wake1::TxIRQ();
-	}
-
-	INTERRUPT_HANDLER(UART1_RX_IRQHandler, 18)
-	{
-		Wake1::RxIRQ();
-	}
+//	INTERRUPT_HANDLER(UART1_TX_IRQHandler, 17)
+//	{
+//		Wake1::TxIRQ();
+//	}
+//	INTERRUPT_HANDLER(UART1_RX_IRQHandler, 18)
+//	{
+//		Wake1::RxIRQ();
+//	}
 
 #endif
 
