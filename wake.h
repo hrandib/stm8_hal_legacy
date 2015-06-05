@@ -514,9 +514,13 @@ namespace Mcudrv
 				Uart::EnableInterrupt(TxEmptyInt);
 				Uart::DisableInterrupt(RxneInt);
 			}
-			
-			#pragma inline=forced
-			static void TxIRQ()
+
+#if defined (STM8S103) || defined (STM8S003)
+			_Pragma("vector=17")
+#elif defined (STM8S105)
+			_Pragma("vector=20")
+#endif
+			__interrupt static void TxIRQ()
 			{
 				using namespace Uarts;
 				if (Uart::IsEvent(TxComplete))
@@ -597,8 +601,12 @@ namespace Mcudrv
 				}
 			}
 
-			#pragma inline=forced
-			static void RxIRQ()
+#if defined (STM8S103) || defined (STM8S003)
+			_Pragma("vector=18")
+#elif defined (STM8S105)
+			_Pragma("vector=21")
+#endif
+			__interrupt static void RxIRQ()
 			{
 				using namespace Uarts;
 				bool error = Uart::IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
@@ -715,7 +723,6 @@ namespace Mcudrv
 					}
 				}
 			}
-
 		};
 
 		template<typename Uart,

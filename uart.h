@@ -1,6 +1,6 @@
 #pragma once
 #include "stm8s.h"
-#include "static_assert.h"
+//#include "static_assert.h"
 #include "gpio.h"
 #include "cstring"
 
@@ -105,7 +105,7 @@ namespace Uarts
 		template<typename T>
 		static void Push(T byte)
 		{
-			BOOST_STATIC_ASSERT(sizeof(T) == 1);
+			static_assert(sizeof(T) == 1, "error in __FUNC__");
 			if (byte == '\r') return;
 			if (byte == '\n')
 			{
@@ -202,8 +202,9 @@ namespace Uarts
 		static void Init()
 		{
 			enum{Div = F_CPU/baud};
-			BOOST_STATIC_ASSERT(Div <= __UINT16_T_MAX__ && Div > 0x0F);		//Divider in Range 16...65535 
-			BOOST_STATIC_ASSERT(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART1_CR5_HDSEL)); // UART2 doesn't have SingleWire mode
+			static_assert(Div <= __UINT16_T_MAX__ && Div > 0x0F, "error in __FUNC__");		//Divider in Range 16...65535
+			static_assert(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART1_CR5_HDSEL),
+						  "error in __FUNC__"); // UART2 doesn't have SingleWire mode
 //			GetChar = Getch;
 			GetBaseAddr()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);		
 			GetBaseAddr()->BRR1 = (Div >> 4U) & 0xFF;
@@ -266,14 +267,14 @@ namespace Uarts
 		template<typename T>
 		static void Putbuf(T *buf, uint8_t size)
 		{
-			STATIC_ASSERT(sizeof(T) == 1);
+			static_assert(sizeof(T) == 1, "error in __FUNC__");
 			Putbuf(reinterpret_cast<const uint8_t* >(buf), size);
 		}
 
 		template<typename T>
 		static void Puts(T *str)
 		{
-			STATIC_ASSERT(sizeof(T) == 1);
+			static_assert(sizeof(T) == 1, "error in __FUNC__");
 			Putbuf(reinterpret_cast<const char*>(str), strlen(reinterpret_cast<const char*>(str)));
 		}
 
@@ -287,7 +288,7 @@ namespace Uarts
 		template<typename T>
 		static void Putbyte(T byte)
 		{
-			STATIC_ASSERT(sizeof(byte) == 1);
+			static_assert(sizeof(byte) == 1, "error in __FUNC__");
 			Putbuf(&byte, 1);
 		}
 

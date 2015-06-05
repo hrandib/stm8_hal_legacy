@@ -1,6 +1,6 @@
 #pragma once
 #include "stm8s.h"
-#include "static_assert.h"
+//#include "static_assert.h"
 
 namespace Mcudrv
 {
@@ -250,7 +250,7 @@ namespace Mcudrv
 			template <Channel Ch, ChannelType type, ChannelCfgIn cfg>
 			static void SetChannelCfg()
 			{
-				BOOST_STATIC_ASSERT(type != Output);
+				static_assert(type != Output, "error in __FUNC__");
 				if(Ch == All_Ch)
 				{
 					TIM1->CCMR1 = TIM1->CCMR2 = TIM1->CCMR3 = TIM1->CCMR4 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
@@ -262,7 +262,7 @@ namespace Mcudrv
 			template <Channel Ch, ChannelType type, ChannelCfgOut cfg>
 			static void SetChannelCfg()
 			{
-				BOOST_STATIC_ASSERT(type == Output);
+				static_assert(type == Output, "error in __FUNC__");
 				if(Ch == All_Ch)
 				{
 					TIM1->CCMR1 = TIM1->CCMR2 = TIM1->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
@@ -289,7 +289,7 @@ namespace Mcudrv
 			template <Channel Ch>
 			static void ChannelDisable()
 			{
-				BOOST_STATIC_ASSERT(Ch != All_Ch);
+				static_assert(Ch != All_Ch, "error in __FUNC__");
 				if (Ch & Ch4 == Ch4) TIM1->CCER2 &= ~(0x0F << 4);
 				if (Ch & Ch3 == Ch3) TIM1->CCER2 &= ~0x0F;
 				if (Ch & Ch2 == Ch2) TIM1->CCER1 &= ~(0x0F << 4);
@@ -300,7 +300,7 @@ namespace Mcudrv
 			template <Channel Ch, ActiveLevel level = ActiveHigh>
 			static void ChannelEnableComplementary()
 			{
-				BOOST_STATIC_ASSERT(Ch == Ch4);
+				static_assert(Ch == Ch4, "error in __FUNC__");
 				if (Ch & Ch3 == Ch3) TIM1->CCER2 |= TIM1_CCER2_CC3NE | (level << 3);
 				if (Ch & Ch2 == Ch2) TIM1->CCER1 |= TIM1_CCER1_CC2NE | ((level << 3) << 4);
 				if (Ch & Ch1 == Ch1) TIM1->CCER1 |= TIM1_CCER1_CC1NE | (level << 3);
@@ -535,7 +535,7 @@ namespace Mcudrv
 			template <Channel Ch, ChannelType type, ChannelCfgIn cfg>
 			static void SetChannelCfg()
 			{
-				BOOST_STATIC_ASSERT(type != Output);
+				static_assert(type != Output, "error in __FUNC__");
 				if(Ch == All_Ch)
 				{
 					TIM2->CCMR1 = TIM2->CCMR2 = TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
@@ -547,7 +547,7 @@ namespace Mcudrv
 			template <Channel Ch, ChannelType type, ChannelCfgOut cfg>
 			static void SetChannelCfg()
 			{
-				BOOST_STATIC_ASSERT(type == Output);
+				static_assert(type == Output, "error in __FUNC__");
 				if(Ch == All_Ch)
 				{
 					TIM2->CCMR1 = TIM2->CCMR2 = TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
