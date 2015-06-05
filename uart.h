@@ -4,7 +4,7 @@
 #include "gpio.h"
 #include "cstring"
 
-//void utoa(uint16_t value, unsigned char* ptr, uint8_t base = 10);
+void utoa(uint16_t value, unsigned char* ptr, uint8_t base = 10);
 
 namespace Mcudrv
 {
@@ -87,62 +87,8 @@ namespace Uarts
 		IdleInt = UART1_CR2_ILIEN,
 		DefaultInts = UART1_CR2_TCIEN | UART1_CR2_RIEN	//TX complete and RX not empty
 	};
-	
-	template<uint8_t size = 24>
-	class UartBuf
+	namespace Internal
 	{
-	private:
-		static uint8_t buf[size];
-		static uint8_t labelc;
-		static uint8_t count;
-	public:
-		#pragma inline=forced
-		static void Init()
-		{
-			buf[0] = 0;
-		}
-		#pragma inline=forced
-		template<typename T>
-		static void Push(T byte)
-		{
-			static_assert(sizeof(T) == 1, "error in __FUNC__");
-			if (byte == '\r') return;
-			if (byte == '\n')
-			{
-				buf[count] = 0;
-				labelc++;
-			}
-			else 
-				buf[count] = byte;
-			if (++count == 24)
-				count = 0;
-		}
-		
-		static uint8_t* Pop()	//TODO: Rewrite, not work properly
-		{
-			uint8_t countl = count - 1;
-			while (buf[--countl])
-			{
-				if (!countl) countl = size;
-			}
-			if (labelc) labelc--;
-			return &buf[++countl];			//Bug at the bound
-		}
-
-		static bool IsNotEmpty()
-		{
-			return labelc;
-		}
-	};
-
-	template<uint8_t size>
-	uint8_t UartBuf<size>::buf[];
-	template<uint8_t size>
-	uint8_t UartBuf<size>::labelc = 0;
-	template<uint8_t size>
-	uint8_t UartBuf<size>::count = 1;
-
-	typedef UartBuf<> Rxbuf;
 
 	template<typename Pin>
 	class UartTraits
@@ -177,118 +123,132 @@ namespace Uarts
 		#pragma inline=forced
 		static void SetConfig(){}
 	};
-	
-	typedef void (*cbRxFunc)(uint8_t);
 
- 	#pragma inline=forced
- 	void EmptyRxFunc(uint8_t){}
+	template<uint16_t base>
+	struct Base;
+	template<> struct Base<UART1_BaseAddress>
+	{
+		typedef UART1_TypeDef type;
+	};
+	template<> struct Base<UART2_BaseAddress>
+	{
+		typedef UART2_TypeDef type;
+	};
 
-	template<uint16_t BaseAddr, typename DEpin = Nullpin>
-	class Uart
+	}//Internal
+
+	template<typename DEpin = Nullpin>
+	class Uart	//TODO: Uart base class with polling
 	{
 	private:
 		static const uint8_t *pBuf_;
 		static uint8_t size_;
+	protected:
+		typedef Internal::UartTraits<DEpin> ControlPin;
 	public:
+		static const uint16_t BaseAddr =
+   #if defined (STM8S103) || defined (STM8S003)
+			   UART1_BaseAddress
+   #elif defined (STM8S105)
+			   UART2_BaseAddress
+   #endif
+				;
+		typedef Internal::Base<BaseAddr>::type BaseType;
+
 		#pragma inline=forced
-		static UART1_TypeDef* GetBaseAddr()
+		static BaseType* Regs()
 		{
-			return reinterpret_cast<UART1_TypeDef*>(BaseAddr);
+			return reinterpret_cast<BaseType*>(BaseAddr);
 		}
-//		static cbRxFunc GetChar;
-		
 		#pragma inline=forced
-		template<Cfg config, /*cbRxFunc Getch = EmptyRxFunc,*/ BaudRate baud = 9600UL>
+		template<Cfg config, BaudRate baud = 9600UL>
 		static void Init()
 		{
-			enum{Div = F_CPU/baud};
-			static_assert(Div <= __UINT16_T_MAX__ && Div > 0x0F, "error in __FUNC__");		//Divider in Range 16...65535
+			enum { Div = F_CPU / baud };
+			static_assert(Div <= __UINT16_T_MAX__ && Div > 0x0F, "UART divider not in range 16...65535");
 			static_assert(!(BaseAddr == UART2_BaseAddress && (static_cast<uint32_t>(config) >> 24) & UART1_CR5_HDSEL),
-						  "error in __FUNC__"); // UART2 doesn't have SingleWire mode
-//			GetChar = Getch;
-			GetBaseAddr()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);		
-			GetBaseAddr()->BRR1 = (Div >> 4U) & 0xFF;
-			GetBaseAddr()->CR1 = static_cast<uint32_t>(config) & 0xFF;
-			GetBaseAddr()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF;
-			GetBaseAddr()->CR5 = (static_cast<uint32_t>(config) >> 24) & 0xFF;
-			GetBaseAddr()->CR2 = (static_cast<uint32_t>(config) >> 8) & 0xFF;
+						  "Single wire Halfduplex mode not available for UART2");
+			Regs()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);
+			Regs()->BRR1 = (Div >> 4U) & 0xFF;
+			Regs()->CR1 = static_cast<uint32_t>(config) & 0xFF;
+			Regs()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF;
+			Regs()->CR5 = (static_cast<uint32_t>(config) >> 24) & 0xFF;
+			Regs()->CR2 = (static_cast<uint32_t>(config) >> 8) & 0xFF;
 //			EnableInterrupt<DefaultInts>();
-			UartTraits<DEpin>::SetConfig();
-//			Rxbuf::Init();
+			ControlPin::SetConfig();
 		}
 
 		#pragma inline=forced
-		template<uint8_t addr>
-		static void SetNodeAddress()	// Incompatible With LIN mode
+		static void SetNodeAddress(const uint8_t addr)	// Incompatible With LIN mode
 		{
-			GetBaseAddr()->CR4 = addr;				
+			Regs()->CR4 = addr;
 		}
 
 		#pragma inline=forced
 		static bool IsEvent(const Events event)
 		{
-			return GetBaseAddr()->SR & event;
+			return Regs()->SR & event;
 		}
 		
 		#pragma inline=forced
 		static bool IsBusy()
 		{
-			return GetBaseAddr()->CR2 & TxEmptyInt;
+			return Regs()->CR2 & TxEmptyInt;
 		}		
 			
 		#pragma inline=forced
 		static void ClearEvent(const Events event)
 		{
-			GetBaseAddr()->SR &= ~event;
+			Regs()->SR &= ~event;
 		}
 
 		#pragma inline=forced
 		static void EnableInterrupt(const Ints mask)
 		{
-			GetBaseAddr()->CR2 |= mask;
+			Regs()->CR2 |= mask;
 		}
 		#pragma inline=forced
 		static void DisableInterrupt(Ints mask)
 		{
-			GetBaseAddr()->CR2 &= ~mask;
+			Regs()->CR2 &= ~mask;
 		}
 
 // Int driven functions
 		static void Putbuf(const uint8_t *buf, uint8_t size)
 		{
 			while (IsBusy());
-			UartTraits<DEpin>::Set();
+			ControlPin::Set();
 			size_ = size;
 			pBuf_ = buf;
-			GetBaseAddr()->DR = buf[0];
+			Regs()->DR = buf[0];
 			EnableInterrupt(TxEmptyInt);
 		}
 		#pragma inline=forced
 		template<typename T>
 		static void Putbuf(T *buf, uint8_t size)
 		{
-			static_assert(sizeof(T) == 1, "error in __FUNC__");
+			static_assert(sizeof(T) == 1, "Type size for Putbuf func must be 1");
 			Putbuf(reinterpret_cast<const uint8_t* >(buf), size);
 		}
 
 		template<typename T>
 		static void Puts(T *str)
 		{
-			static_assert(sizeof(T) == 1, "error in __FUNC__");
+			static_assert(sizeof(T) == 1, "Type size for Puts func must be 1");
 			Putbuf(reinterpret_cast<const char*>(str), strlen(reinterpret_cast<const char*>(str)));
 		}
 
-//		static void Puts(uint16_t value)
-//		{
-//			uint8_t buf[6];
-//			utoa(value, buf);
-//			Puts(buf);
-//		}
+		static void Puts(uint16_t value)
+		{
+			uint8_t buf[6];
+			utoa(value, buf);
+			Puts(buf);
+		}
 
 		template<typename T>
 		static void Putbyte(T byte)
 		{
-			static_assert(sizeof(byte) == 1, "error in __FUNC__");
+			static_assert(sizeof(byte) == 1, "Type size for Putbyte func must be 1");
 			Putbuf(&byte, 1);
 		}
 
@@ -297,20 +257,24 @@ namespace Uarts
 			Puts("\r\n");
 		}
 
-		#pragma inline=forced
-		static void TxIRQ()
+#if defined (STM8S103) || defined (STM8S003)
+			_Pragma("vector=17")
+#elif defined (STM8S105)
+			_Pragma("vector=20")
+#endif
+			__interrupt static void TxIRQ()
 		{		
 			static uint8_t count;
 			if (IsEvent(TxComplete))
 			{
 				ClearEvent(TxComplete);
-				UartTraits<DEpin>::Clear();
+				ControlPin::Clear();
 			}
 			else //if (IsEvent(TxEmpty))
 			{
 				if (++count < size_)
 				{
-					GetBaseAddr()->DR = pBuf_[count];
+					Regs()->DR = pBuf_[count];
 				}
 				else
 				{
@@ -321,133 +285,72 @@ namespace Uarts
 
 		}
 
-		#pragma inline=forced
-		static void RxIRQ()
+#if defined (STM8S103) || defined (STM8S003)
+			_Pragma("vector=18")
+#elif defined (STM8S105)
+			_Pragma("vector=21")
+#endif
+			__interrupt static void RxIRQ()
 		{
 			bool error = IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
 			if(error) return;
-			uint8_t temp = GetBaseAddr()->DR;
+			uint8_t temp = Regs()->DR;
 //			if (GetChar) GetChar(temp);
 			//Rxbuf::Push(temp);
-			GetBaseAddr()->DR = temp;			//echo
+			Regs()->DR = temp;			//echo
 		}
 
 		// Functions with polling
-//		static void Putch(char ch)
-// 		{
-// 			while(!(GetBaseAddr()->SR & UART1_SR_TXE));
-// 			GetBaseAddr()->DR = ch;
-// 		}
-// 		static void Puts(char *s)
-// 		{
-// 			while(*s)
-// 			{
-// 				Putch(*s++);
-// 			}
-// 
-// 		}
-// 		static void Putbuf(uint8_t *buf, uint16_t size)
-// 		{
-// 			while(size--)
-// 			{
-// 				Putch(*buf++);
-// 			}
-// 		}
-// 	
-// 		static uint8_t Getch()
-// 		{
-// 			uint8_t x = GetBaseAddr()->DR;
-// 			while (!(GetBaseAddr()->SR & UART1_SR_RXNE));
-// 			return GetBaseAddr()->DR;
-// 		}
+/*		static void Putch(char ch)
+		{
+			while(!(GetBaseAddr()->SR & UART1_SR_TXE));
+			GetBaseAddr()->DR = ch;
+		}
+		static void Puts(char *s)
+		{
+			while(*s)
+			{
+				Putch(*s++);
+			}
+
+		}
+		static void Putbuf(uint8_t *buf, uint16_t size)
+		{
+			while(size--)
+			{
+				Putch(*buf++);
+			}
+		}
+
+		static uint8_t Getch()
+		{
+			uint8_t x = GetBaseAddr()->DR;
+			while (!(GetBaseAddr()->SR & UART1_SR_RXNE));
+			return GetBaseAddr()->DR;
+		}
+*/
 	};
 	
- 	template<uint16_t BaseAddr, typename DEpin>
- 	uint8_t Uart<BaseAddr, DEpin>::size_;
- 	template<uint16_t BaseAddr, typename DEpin>
-	uint8_t const *Uart<BaseAddr, DEpin>::pBuf_;
-//	template<uint16_t BaseAddr, typename DEpin>
-//	cbRxFunc Uart<BaseAddr, DEpin>::GetChar = EmptyRxFunc;
+	template<typename DEpin>
+	uint8_t Uart<DEpin>::size_;
+	template<typename DEpin>
+	uint8_t const *Uart<DEpin>::pBuf_;
 
-#ifndef USE_CUSTOM_UART_IRQ
-#if defined (STM8S103) || defined (STM8S003)
-	
-	typedef Uart<UART1_BaseAddress> Uart1;
-	INTERRUPT_HANDLER(UART1_TX_IRQHandler, 17)
-	{
-		Uart1::TxIRQ();
-	}
-	INTERRUPT_HANDLER(UART1_RX_IRQHandler, 18)
-	{
-		Uart1::RxIRQ();
-	}
-#endif
-
-#if defined (STM8S105)
-	
-	typedef Uart<UART2_BaseAddress> Uart2;
-	INTERRUPT_HANDLER(UART2_TX_IRQHandler, 20)
-	{
-		 Uart2::TxIRQ();
-	}
-	INTERRUPT_HANDLER(UART2_RX_IRQHandler, 21)
-	{
-		 Uart2::RxIRQ();
- 	}
-
-#endif
-#endif
-// 	class Rs485: public Uart1
-// 	{
-// 	private:	
-// 		typedef Pd5 RxTx;
-// 		typedef Pd6 TxModePin;
-// 	public:
-// 		#pragma inline=forced
-// 		static void Init()
-// 		{
-// 			TxModePin::SetConfig<GpioBase::Out_PushPull>();
-// 			RxTx::SetConfig<GpioBase::In_float>();
-// 			Uart1::Init<static_cast<Cfg>(RxTxEnable | SingleWireMode)>();
-// 		}
-// 		static void Putch(char ch)
-// 		{
-// 			//				Uart1::ReceiverDisable();
-// 			TxModePin::Set();
-// 			Uart1::Putch(ch);
-// 			while (!isEvent<TxComplete>());
-// 			TxModePin::Clear();
-// 			//				Uart1::ReceiverEnable();
-// 		}
-// 		static void Puts(char *s)
-// 		{
-// 			TxModePin::Set();
-// 			Uart1::Puts(s);
-// 			while (!isEvent<TxComplete>());
-// 			TxModePin::Clear();
-// 		}
-// 		static void Putbuf(uint8_t *buf, uint16_t size)
-// 		{
-// 			TxModePin::Set();
-// 			Uart1::Putbuf(buf, size);
-// 			while (!isEvent<TxComplete>());
-// 			TxModePin::Clear();
-// 		}
-// 	};
 }//Uarts
 }//Mcudrv
-/*
-void utoa(uint16_t value, unsigned char* ptr, uint8_t base)
+
+void utoa(int32_t value, unsigned char* ptr, uint8_t base)
 {
-	uint16_t tmp_value;
+	uint32_t quotient = value < 0 ? -value : value;
 	unsigned char *ptr1 = ptr, tmp_char;
 	// check that the base if valid
 	if (base < 2 || base > 36) { *ptr = '\0'; return; }
 	do {
-		tmp_value = value;
-		value /= base;
-		*ptr++ = "0123456789abcdefghijklmnopqrstuvwxyz"[tmp_value - value * base]; //TODO: Eliminate string
-	} while (value);
+		const uint32_t q = quotient / base;
+		const uint32_t rem = quotient - q * base;
+		quotient = q;
+		*ptr++ = (rem < 10 ? '0' : 'a' - 10) + rem;
+	} while ( quotient );
 	*ptr-- = '\0';
 	while (ptr1 < ptr)
 	{
@@ -457,4 +360,4 @@ void utoa(uint16_t value, unsigned char* ptr, uint8_t base)
 	}
 	return;
 }
-*/
+

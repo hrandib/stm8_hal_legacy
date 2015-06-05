@@ -2,9 +2,7 @@
 
 #include "timers.h"
 
-#define USE_CUSTOM_UART_IRQ
 #include "uart.h"
-#undef USE_CUSTOM_UART_IRQ
 #include "flash.h"
 
 #ifndef DEPIN
@@ -257,20 +255,6 @@ namespace Mcudrv
 			}
 		};
 
-		template<typename Uart>
-		struct WakeTraits
-		{
-			static const bool isUart1 = false;
-			enum { SingleWireOnlyForUART1 = 0 };
-		};
-
-		template<>
-		struct  WakeTraits<Uarts::Uart<UART1_BaseAddress> >
-		{
-			static const bool isUart1 = true;
-			enum{SingleWireOnlyForUART1 = Uarts::SingleWireMode};
-	 	};
-
 		class WakeData
 		{
 		protected:
@@ -288,14 +272,17 @@ namespace Mcudrv
 		volatile WakeData::Packet WakeData::pdata;
 		uint8_t WakeData::cmd;
 
-		template<typename Uart,
-				 typename moduleList = ModuleList<NullModule>,
+		template<typename moduleList = ModuleList<NullModule>,
 				 Uarts::BaudRate baud = 9600UL,
 				 typename DEpin = DEPIN,
 				 Mode mode = Slave>	//TODO: Master mode
 		class Wake : WakeData
 		{
 		private:
+			typedef Uarts::Uart<> Uart;
+			typedef Uarts::Internal::UartTraits<DEpin> ControlPin;
+			enum { SingleWireMode = Uart::BaseAddr == UART1_BaseAddress ? Uarts::SingleWireMode : 0 };
+
 			static void Crc8(uint8_t b) //TODO: Table computation
 			{
 				for(char i = 0; i < 8; b = b >> 1, i++)
@@ -361,14 +348,9 @@ namespace Mcudrv
 			static void Init()
 			{
 				using namespace Uarts;
-				Uart::template Init<static_cast<Cfg>(Uarts::DefaultCfg | static_cast<Cfg>(WakeTraits<Uart>::SingleWireOnlyForUART1))>();		//Single Wire mode is default for UART1
-				UartTraits<DEpin>::SetConfig();
-//				uint8_t tmp = nodeAddr_nv;
-//				if (tmp && tmp < 127)						//Address valid
-//					addr = tmp;
-//				tmp = groupAddr_nv;
-//				if (tmp > 79 && tmp < 96)						//Address valid
-//					groupaddr = tmp;
+		//Single Wire mode is default for UART1
+				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode)>();
+				ControlPin::SetConfig();
 				moduleList::Init();
 				OpTime::Init();
 				Wdg::Iwdg::Enable(Wdg::P_1s);
@@ -504,11 +486,11 @@ namespace Mcudrv
 			static void Send()
 			{
 				using namespace Uarts;
-				UartTraits<DEpin>::Set(); //переключение RS-485 на передачу
+				ControlPin::Set(); //переключение RS-485 на передачу
 				char data_byte = FEND;
 				pdata.crc = CRC_INIT;           //инициализация CRC,
 				Crc8(data_byte);		//обновление CRC
-				Uart::GetBaseAddr()->DR = data_byte;
+				Uart::Regs()->DR = data_byte;
 				state = ADDR;
 				prev_byte = TFEND;
 				Uart::EnableInterrupt(TxEmptyInt);
@@ -528,7 +510,7 @@ namespace Mcudrv
 					Uart::ClearEvent(TxComplete);
 					Uart::ClearEvent(Rxne);
 					Uart::EnableInterrupt(RxneInt);
-					UartTraits<DEpin>::Clear();		//переключение RS-485 на прием
+					ControlPin::Clear();		//переключение RS-485 на прием
 					activity = false;
 				}
 				else //if (Uart::template IsEvent<Uarts::TxEmpty>())
@@ -538,14 +520,14 @@ namespace Mcudrv
 					{
 						data_byte = TFEND;                //передача TFEND вместо FEND
 						prev_byte = data_byte;
-						Uart::GetBaseAddr()->DR = data_byte;
+						Uart::Regs()->DR = data_byte;
 						return;
 					}
 					if(prev_byte == FESC)               //если производится стаффинг,
 					{
 						data_byte = TFESC;                //передача TFESC вместо FESC
 						prev_byte = data_byte;
-						Uart::GetBaseAddr()->DR = data_byte;
+						Uart::Regs()->DR = data_byte;
 						return;
 					}
 					switch(state)
@@ -597,7 +579,7 @@ namespace Mcudrv
 					prev_byte = data_byte;              //сохранение пре-байта
 					if(data_byte == FEND)// || data_byte == FESC)
 						data_byte = FESC;                 //передача FESC, если нужен стаффинг
-					Uart::GetBaseAddr()->DR = data_byte;
+					Uart::Regs()->DR = data_byte;
 				}
 			}
 
@@ -610,7 +592,7 @@ namespace Mcudrv
 			{
 				using namespace Uarts;
 				bool error = Uart::IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
-				uint8_t data_byte = Uart::GetBaseAddr()->DR;              //чтение данных
+				uint8_t data_byte = Uart::Regs()->DR;              //чтение данных
 
 				if(error)     //если обнаружены ошибки при приеме байта
 				{	
@@ -725,74 +707,37 @@ namespace Mcudrv
 			}
 		};
 
-		template<typename Uart,
-				 typename moduleList,
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::nodeAddr_nv = 127;
-		template<typename Uart,
-				 typename moduleList,
+		uint8_t Wake<moduleList, baud, DEpin, mode>::nodeAddr_nv = 127;
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::groupAddr_nv = 95;
-		template<typename Uart,
-				 typename moduleList,
+		uint8_t Wake<moduleList, baud, DEpin, mode>::groupAddr_nv = 95;
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::prev_byte;
-		template<typename Uart,
-				 typename moduleList,
+		uint8_t Wake<moduleList, baud, DEpin, mode>::prev_byte;
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		State Wake<Uart, moduleList, baud, DEpin, mode>::state;
-		template<typename Uart,
-				 typename moduleList,
+		State Wake<moduleList, baud, DEpin, mode>::state;
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<Uart, moduleList, baud, DEpin, mode>::ptr;
-		template<typename Uart,
-				 typename moduleList,
+		uint8_t Wake<moduleList, baud, DEpin, mode>::ptr;
+		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		bool Wake<Uart, moduleList, baud, DEpin, mode>::activity;
+		bool Wake<moduleList, baud, DEpin, mode>::activity;
 	}
 
-
-
-#ifndef USE_CUSTOM_UART_IRQ
-
-#if defined (STM8S103) || defined (STM8S003)
-//	INTERRUPT_HANDLER(UART1_TX_IRQHandler, 17)
-//	{
-//		Wake1::TxIRQ();
-//	}
-//	INTERRUPT_HANDLER(UART1_RX_IRQHandler, 18)
-//	{
-//		Wake1::RxIRQ();
-//	}
-
-#endif
-
-#if defined (STM8S105)
-	typedef Wk::Wake<Uarts::Uart<UART2_BaseAddress> > Wake1;
-
-	INTERRUPT_HANDLER(UART2_TX_IRQHandler, 20)
-	{
-		Wake1::TxIRQ();
-	}
-
-	INTERRUPT_HANDLER(UART2_RX_IRQHandler, 21)
-	{
-		Wake1::RxIRQ();
-	}
-#endif
-
-#endif
 
 }
