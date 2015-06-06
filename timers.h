@@ -174,8 +174,7 @@ namespace Mcudrv
 		class Timer1
 		{
 		public:
-			template <uint16_t divider, Cfg config = Default>
-			static void Init()
+			static void Init(const uint16_t divider, const Cfg config = Default)
 			{
 				TIM1->PSCRH = (divider - 1) >> 8UL;
 				TIM1->PSCRL = divider - 1;
@@ -463,8 +462,7 @@ namespace Mcudrv
 		class Timer2
 		{
 		public:
-			template <Div divider, Cfg config>
-			static void Init()
+			static void Init(const Div divider, const Cfg config)
 			{
 				TIM2->PSCR = divider;
 				TIM2->CR1 = config;
@@ -656,8 +654,7 @@ namespace Mcudrv
 		class Timer4
 		{
 		public:
-			template <Div Divider, Cfg Config>
-			static void Init()
+			static void Init(const Div Divider, const Cfg Config)
 			{
 				TIM4->PSCR = Divider;
 				TIM4->CR1 = Config;

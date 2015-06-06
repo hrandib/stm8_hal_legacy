@@ -32,7 +32,7 @@ namespace Mcudrv
 		{
 			FLASH->IAPSR &= ~FLASH_IAPSR_DUL;
 		}
-		
+
 		template<>
 		void inline Unlock<Eeprom>()	
 		{
@@ -57,6 +57,13 @@ namespace Mcudrv
 			__no_operation();
 			__no_operation();
 			return FLASH->IAPSR & FLASH_IAPSR_DUL;
+		}
+
+		#pragma inline=forced
+		void SetWordProgramming()
+		{
+			FLASH->CR2 = FLASH_CR2_WPRG;
+			FLASH->NCR2 = ~FLASH_NCR2_NWPRG;
 		}
 
 	}

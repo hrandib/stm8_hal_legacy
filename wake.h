@@ -1,9 +1,12 @@
+//
+//	Uart and TIM4 peripherals used
+//
 #pragma once
 
 #include "timers.h"
-
 #include "uart.h"
 #include "flash.h"
+#include "itc.h"
 
 #ifndef DEPIN
 #define DEPIN Mcudrv::Nullpin
@@ -16,7 +19,7 @@ namespace Mcudrv
 {
 	namespace Wk
 	{
-
+		void Empty_cb() { }
 	//			---=== Operation time counter ===---
 		class OpTime
 		{
@@ -29,23 +32,40 @@ namespace Mcudrv
 			};
 
 			#pragma data_alignment=4
-			static EepromBuf_t eebuf[16] @ ".eeprom.noinit";
+			#pragma location=".eeprom.noinit"
+			static EepromBuf_t eebuf[16];// @ ".eeprom.noinit";
 			#pragma data_alignment=4
-			static uint16_t hvalue @ ".eeprom.noinit";
+			#pragma location=".eeprom.noinit"
+			static uint16_t hvalue;// @ ".eeprom.noinit";
 			volatile static bool tenMinPassed;
+
+			_Pragma(VECTOR_ID(TIM4_OVR_UIF_vector))
+			__interrupt static void UpdIRQ()	//Fcpu/256/128 ~= 61 Hz
+			{
+				static uint16_t tempCounter;
+				T4::Timer4::ClearIntFlag();
+				if(++tempCounter == 36621)
+				{
+					tempCounter = 0;
+					SetTenMinutesFlag();
+				}
+				if(Timer_cb) Timer_cb();
+			}
 		public:
+			static void (*Timer_cb)();
 			#pragma inline=forced
 			static void Init()
 			{
-				using namespace T2;
-				Timer2::Init<Div32768, CEN>();
-				Timer2::WriteAutoReload(36620UL);		//10 min period
-				Timer2::TriggerEvent(UpdEv);			//Need to forcing prescaler settings
-				Timer2::EnableInterrupt(UpdInt);		//
-				__no_operation();						//Need to GenerateEvent<UpdEv>() take effect,
-				Timer2::ClearIntFlag(UpdInt);
+				using namespace T4;
+				Itc::SetPriority(TIM4_OVR_UIF_vector, Itc::prioLevel_2);
+				Timer4::Init(Div128, CEN);
+				Timer4::EnableInterrupt();
 			}
-
+			#pragma inline=forced
+			static void SetTimerCallback(void (*t_cb)())
+			{
+				Timer_cb = t_cb;
+			}
 			#pragma inline=forced
 			static bool GetTenMinitesFlag()
 			{
@@ -98,12 +118,7 @@ namespace Mcudrv
 		OpTime::EepromBuf_t OpTime::eebuf[16];
 		uint16_t OpTime::hvalue;
 		volatile bool OpTime::tenMinPassed;
-
-		INTERRUPT_HANDLER(TIM2_UPD_OVF_BRK_IRQHandler, 13)
-		{
-			T2::Timer2::ClearIntFlag(T2::UpdInt);
-			OpTime::SetTenMinutesFlag();
-		}
+		void (*OpTime::Timer_cb)();
 
 	//			---=== Wake main definitions ===---
 
@@ -197,7 +212,7 @@ namespace Mcudrv
 				 typename Module4 = NullModule, typename Module5 = NullModule, typename Module6 = NullModule>
 		struct ModuleList
 		{
-			enum { devicesMask = (uint8_t)Module1::deviceMask | Module2::deviceMask | Module3::deviceMask |
+			enum { deviceMask = (uint8_t)Module1::deviceMask | Module2::deviceMask | Module3::deviceMask |
 								Module4::deviceMask | Module5::deviceMask | Module6::deviceMask };
 			static void Init()
 			{
@@ -217,7 +232,7 @@ namespace Mcudrv
 				Module5::Process();
 				Module6::Process();
 			}
-			static uint8_t GetDeviceFeatures(uint8_t deviceMask)
+			static uint8_t GetDeviceFeatures(const uint8_t deviceMask)
 			{
 				return deviceMask == Module1::deviceMask ? Module1::features :
 						deviceMask == Module2::deviceMask ? Module2::features :
@@ -293,8 +308,6 @@ namespace Mcudrv
 			static uint8_t nodeAddr_nv;// @ ".eeprom.data";
 			#pragma location=".eeprom.data"
 			static uint8_t groupAddr_nv;// @ ".eeprom.data";
-//			static uint8_t addr;
-//			static uint8_t groupaddr;
 			static uint8_t prev_byte;
 			static State state;				//Current tranfer mode
 			static uint8_t ptr;				//data pointer in Rx buffer
@@ -382,7 +395,7 @@ namespace Mcudrv
 					{
 						if (!pdata.dsize)	//Common device info
 						{
-							pdata.buf[0] = moduleList::devicesMask;
+							pdata.buf[0] = moduleList::deviceMask;
 							pdata.buf[1] = INSTRUCTION_SET_VERSION;
 						}
 						else if (pdata.dsize == 1)	//Info for each logical device
@@ -390,7 +403,7 @@ namespace Mcudrv
 							if(pdata.buf[0] < 7)
 							{
 								uint8_t deviceMask = 1 << pdata.buf[0];
-								if(moduleList::devicesMask & deviceMask) //device available
+								if(moduleList::deviceMask & deviceMask) //device available
 								{
 									pdata.buf[0] = ERR_NO;
 									pdata.buf[1] = moduleList::GetDeviceFeatures(deviceMask);
@@ -498,9 +511,9 @@ namespace Mcudrv
 			}
 
 #if defined (STM8S103) || defined (STM8S003)
-			_Pragma("vector=17")
+			_Pragma(VECTOR_ID(UART1_T_TXE_vector))
 #elif defined (STM8S105)
-			_Pragma("vector=20")
+			_Pragma(VECTOR_ID(UART2_T_TXE_vector))
 #endif
 			__interrupt static void TxIRQ()
 			{
@@ -584,9 +597,9 @@ namespace Mcudrv
 			}
 
 #if defined (STM8S103) || defined (STM8S003)
-			_Pragma("vector=18")
+			_Pragma(VECTOR_ID(UART1_R_RXNE_vector))
 #elif defined (STM8S105)
-			_Pragma("vector=21")
+			_Pragma(VECTOR_ID(UART2_R_RXNE_vector))
 #endif
 			__interrupt static void RxIRQ()
 			{
@@ -738,6 +751,4 @@ namespace Mcudrv
 				 Mode mode>
 		bool Wake<moduleList, baud, DEpin, mode>::activity;
 	}
-
-
 }
