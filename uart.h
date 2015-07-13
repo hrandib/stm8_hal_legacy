@@ -67,25 +67,25 @@ namespace Uarts
 
 	enum Events
 	{
-		ParityErr = UART1_SR_PE,
-		FrameErr = UART1_SR_FE,
-		NoiseErr = UART1_SR_NF,
-		OverrunErr = UART1_SR_OR,
-		Idle = UART1_SR_IDLE,
-		Rxne = UART1_SR_RXNE,
-		TxComplete = UART1_SR_TC,
-		TxEmpty = UART1_SR_TXE
+		EvParityErr = UART1_SR_PE,
+		EvFrameErr = UART1_SR_FE,
+		EvNoiseErr = UART1_SR_NF,
+		EvOverrunErr = UART1_SR_OR,
+		EvIdle = UART1_SR_IDLE,
+		EvRxne = UART1_SR_RXNE,
+		EvTxComplete = UART1_SR_TC,
+		EvTxEmpty = UART1_SR_TXE
 	};
 
-	enum Ints
+	enum Irqs
 	{
-		ParityIntEnable = UART1_CR1_PIEN,
+		IrqParityEnable = UART1_CR1_PIEN,
 //		---================---			
-		TxEmptyInt = UART1_CR2_TIEN,
-		TxCompleteInt = UART1_CR2_TCIEN,
-		RxneInt = UART1_CR2_RIEN,
-		IdleInt = UART1_CR2_ILIEN,
-		DefaultInts = UART1_CR2_TCIEN | UART1_CR2_RIEN	//TX complete and RX not empty
+		IrqTxEmpty = UART1_CR2_TIEN,
+		IrqTxCompletet = UART1_CR2_TCIEN,
+		IrqRxne = UART1_CR2_RIEN,
+		IrqIdle = UART1_CR2_ILIEN,
+		IrqDefault = UART1_CR2_TCIEN | UART1_CR2_RIEN	//TX complete and RX not empty
 	};
 	namespace Internal
 	{
@@ -137,12 +137,10 @@ namespace Uarts
 
 	}//Internal
 
+	//class with polling routines
 	template<typename DEpin = Nullpin>
-	class Uart	//TODO: Uart base class with polling
+	class Uart
 	{
-	private:
-		static const uint8_t *pBuf_;
-		static uint8_t size_;
 	protected:
 		typedef Internal::UartTraits<DEpin> ControlPin;
 	public:
@@ -203,18 +201,61 @@ namespace Uarts
 		}
 
 		#pragma inline=forced
-		static void EnableInterrupt(const Ints mask)
+		static void EnableInterrupt(const Irqs mask)
 		{
 			Regs()->CR2 |= mask;
 		}
 		#pragma inline=forced
-		static void DisableInterrupt(Ints mask)
+		static void DisableInterrupt(const Irqs mask)
 		{
 			Regs()->CR2 &= ~mask;
 		}
 
-// Int driven functions
+		static void Putch(const uint8_t ch)
+		{
+			while(!IsEvent(EvTxEmpty));
+			Regs()->DR = ch;
+		}
+		static void Puts(const uint8_t* s)
+		{
+			while(*s)
+			{
+				Putch(*s++);
+			}
+		}
+		template<typename T>
+		static void Puts(const T* s)
+		{
+			static_assert(sizeof T == 1, "Wrong type for Puts");
+			Puts(static_cast<const uint8_t*>(s));
+		}
+		static void Putbuf(const uint8_t *buf, uint16_t size)
+		{
+			while(size--)
+			{
+				Putch(*buf++);
+			}
+		}
 		static void Putbuf(const uint8_t *buf, uint8_t size)
+		{
+			while(size--)
+			{
+				Putch(*buf++);
+			}
+		}
+#define USARTECHO
+		static uint8_t Getch()
+		{
+			while (!IsEvent(EvRxne));
+			uint8_t ch = Regs()->DR;
+#ifdef USARTECHO
+			Regs()->DR = ch;
+#endif
+			return ch;
+		}
+
+// Int driven functions
+/*		static void Putbuf(const uint8_t *buf, uint8_t size)
 		{
 			while (IsBusy());
 			ControlPin::Set();
@@ -256,13 +297,13 @@ namespace Uarts
 		{
 			Puts("\r\n");
 		}
-
+*/
 #if defined (STM8S103) || defined (STM8S003)
 			_Pragma("vector=17")
 #elif defined (STM8S105)
 			_Pragma("vector=20")
 #endif
-			__interrupt static void TxIRQ()
+		__interrupt static void TxIRQ()
 		{		
 			static uint8_t count;
 			if (IsEvent(TxComplete))
@@ -295,40 +336,9 @@ namespace Uarts
 			bool error = IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
 			if(error) return;
 			uint8_t temp = Regs()->DR;
-//			if (GetChar) GetChar(temp);
 			//Rxbuf::Push(temp);
 			Regs()->DR = temp;			//echo
 		}
-
-		// Functions with polling
-/*		static void Putch(char ch)
-		{
-			while(!(GetBaseAddr()->SR & UART1_SR_TXE));
-			GetBaseAddr()->DR = ch;
-		}
-		static void Puts(char *s)
-		{
-			while(*s)
-			{
-				Putch(*s++);
-			}
-
-		}
-		static void Putbuf(uint8_t *buf, uint16_t size)
-		{
-			while(size--)
-			{
-				Putch(*buf++);
-			}
-		}
-
-		static uint8_t Getch()
-		{
-			uint8_t x = GetBaseAddr()->DR;
-			while (!(GetBaseAddr()->SR & UART1_SR_RXNE));
-			return GetBaseAddr()->DR;
-		}
-*/
 	};
 	
 	template<typename DEpin>
@@ -337,9 +347,10 @@ namespace Uarts
 	uint8_t const *Uart<DEpin>::pBuf_;
 
 }//Uarts
+	typedef Uarts::Uart<> Uart;
 }//Mcudrv
 
-void utoa(int32_t value, unsigned char* ptr, uint8_t base)
+void utoa(int32_t value, unsigned char* ptr, uint8_t base) //TODO: move to source file
 {
 	uint32_t quotient = value < 0 ? -value : value;
 	unsigned char *ptr1 = ptr, tmp_char;

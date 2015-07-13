@@ -243,6 +243,21 @@ namespace Mcudrv
 		}
 	};
 
+	template<typename Pin>
+	struct InvertedPin : public Pin
+	{
+#pragma inline=forced
+		static void Set()
+		{
+			Pin::Clear();
+		}
+#pragma inline=forced
+		static void Clear()
+		{
+			Pin::Set();
+		}
+	};
+
 #define PINSDEF(x,y)	typedef TPin<Gpio##x, 0x01> P##y##0;\
 						typedef TPin<Gpio##x, 0x02> P##y##1;\
 						typedef TPin<Gpio##x, 0x04> P##y##2;\

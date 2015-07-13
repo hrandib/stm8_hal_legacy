@@ -11,7 +11,7 @@ namespace Mcudrv
 	{
 		enum Priority
 		{
-			prioLevel_1 = 0x01,
+			prioLevel_1 = 0x01, //TODO: What the highest and lowest?
 			prioLevel_2 = 0x00,
 			prioLevel_3 = 0x03
 		};

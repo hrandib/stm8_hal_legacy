@@ -38,7 +38,7 @@ namespace Mcudrv
 			#pragma location=".eeprom.noinit"
 			static uint16_t hvalue;// @ ".eeprom.noinit";
 			volatile static bool tenMinPassed;
-
+/*
 			_Pragma(VECTOR_ID(TIM4_OVR_UIF_vector))
 			__interrupt static void UpdIRQ()	//Fcpu/256/128 ~= 61 Hz
 			{
@@ -51,6 +51,7 @@ namespace Mcudrv
 				}
 				if(Timer_cb) Timer_cb();
 			}
+			*/
 		public:
 			static void (*Timer_cb)();
 			#pragma inline=forced
@@ -59,7 +60,7 @@ namespace Mcudrv
 				using namespace T4;
 				Itc::SetPriority(TIM4_OVR_UIF_vector, Itc::prioLevel_2);
 				Timer4::Init(Div128, CEN);
-				Timer4::EnableInterrupt();
+		//		Timer4::EnableInterrupt();
 			}
 			#pragma inline=forced
 			static void SetTimerCallback(void (*t_cb)())
@@ -362,25 +363,25 @@ namespace Mcudrv
 			{
 				using namespace Uarts;
 		//Single Wire mode is default for UART1
-				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode)>();
+				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), 4800UL>();
 				ControlPin::SetConfig();
-				moduleList::Init();
-				OpTime::Init();
-				Wdg::Iwdg::Enable(Wdg::P_1s);
+//				moduleList::Init();
+//				OpTime::Init();
+//				Wdg::Iwdg::Enable(Wdg::P_1s);
 				Uart::EnableInterrupt(DefaultInts);
 			}
 
 			#pragma inline=forced
 			static void Process()
 			{
-				if (OpTime::GetTenMinitesFlag() && !IsActive())
-				{
-					OpTime::ClearTenMinutesFlag();
-					moduleList::SaveState();		//Save to EEPROM
-					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
-				}
-				Wdg::Iwdg::Refresh();
-				switch(cmd)
+//				if (OpTime::GetTenMinitesFlag() && !IsActive())
+//				{
+//					OpTime::ClearTenMinutesFlag();
+//					moduleList::SaveState();		//Save to EEPROM
+//					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
+//				}
+//				Wdg::Iwdg::Refresh();
+/*				switch(cmd)
 				{
 					case C_NOP:
 						break;
@@ -397,12 +398,13 @@ namespace Mcudrv
 						{
 							pdata.buf[0] = moduleList::deviceMask;
 							pdata.buf[1] = INSTRUCTION_SET_VERSION;
+							pdata.dsize = 2;
 						}
 						else if (pdata.dsize == 1)	//Info for each logical device
 						{
 							if(pdata.buf[0] < 7)
 							{
-								uint8_t deviceMask = 1 << pdata.buf[0];
+								const uint8_t deviceMask = 1 << pdata.buf[0];
 								if(moduleList::deviceMask & deviceMask) //device available
 								{
 									pdata.buf[0] = ERR_NO;
@@ -410,9 +412,7 @@ namespace Mcudrv
 								}
 								else //device not available
 								{
-									pdata.buf[0] = ERR_PA;
-									pdata.dsize = 1;
-									break;
+									pdata.buf[0] = ERR_NI;
 								}
 							}
 							//else if(pdata.buf[0] == 7) //custom device
@@ -423,7 +423,6 @@ namespace Mcudrv
 							pdata.dsize = 1;
 							break;
 						}
-						pdata.dsize = 2;
 					}
 						break;
 					case C_SETNODEADDRESS: SetAddress(addrNode);
@@ -486,7 +485,11 @@ namespace Mcudrv
 						break;
 					default: moduleList::Process();
 				}
-				if (pdata.addr == nodeAddr_nv && cmd != C_NOP) Send();
+*/				if (cmd != C_NOP)// && pdata.addr == nodeAddr_nv)
+				{
+					Yellow::Toggle();
+					Send();
+				}
 				cmd = Wk::C_NOP;
 			}
 
