@@ -11,9 +11,9 @@ namespace Mcudrv
 	{
 		enum Priority
 		{
-			prioLevel_1 = 0x01, //TODO: What the highest and lowest?
-			prioLevel_2 = 0x00,
-			prioLevel_3 = 0x03
+			prioLevel_1_low = 0x01,
+			prioLevel_2_middle = 0x00,
+			prioLevel_3_high = 0x03
 		};
 		#pragma inline=forced
 		void SetPriority(uint8_t vector, const Priority priority)

@@ -137,7 +137,7 @@ namespace Uarts
 
 	}//Internal
 
-	//class with polling routines
+	//class based on polling routines
 	template<typename DEpin = Nullpin>
 	class Uart
 	{
@@ -191,7 +191,7 @@ namespace Uarts
 		#pragma inline=forced
 		static bool IsBusy()
 		{
-			return Regs()->CR2 & TxEmptyInt;
+			return Regs()->CR2 & IrqTxEmpty;
 		}		
 			
 		#pragma inline=forced
@@ -226,8 +226,8 @@ namespace Uarts
 		template<typename T>
 		static void Puts(const T* s)
 		{
-			static_assert(sizeof T == 1, "Wrong type for Puts");
-			Puts(static_cast<const uint8_t*>(s));
+			static_assert(sizeof(T) == 1, "Wrong type for Puts");
+			Puts((const uint8_t*)s);
 		}
 		static void Putbuf(const uint8_t *buf, uint16_t size)
 		{
@@ -253,6 +253,14 @@ namespace Uarts
 #endif
 			return ch;
 		}
+	};
+
+	//class based on interrupts and circular buffer
+	template<typename T>
+	class UartIrq : public Uart<T>
+	{
+
+	};
 
 // Int driven functions
 /*		static void Putbuf(const uint8_t *buf, uint8_t size)
@@ -298,7 +306,7 @@ namespace Uarts
 			Puts("\r\n");
 		}
 */
-#if defined (STM8S103) || defined (STM8S003)
+/*#if defined (STM8S103) || defined (STM8S003)
 			_Pragma("vector=17")
 #elif defined (STM8S105)
 			_Pragma("vector=20")
@@ -306,9 +314,9 @@ namespace Uarts
 		__interrupt static void TxIRQ()
 		{		
 			static uint8_t count;
-			if (IsEvent(TxComplete))
+			if (IsEvent(EvTxComplete))
 			{
-				ClearEvent(TxComplete);
+				ClearEvent(EvTxComplete);
 				ControlPin::Clear();
 			}
 			else //if (IsEvent(TxEmpty))
@@ -345,9 +353,8 @@ namespace Uarts
 	uint8_t Uart<DEpin>::size_;
 	template<typename DEpin>
 	uint8_t const *Uart<DEpin>::pBuf_;
-
+*/
 }//Uarts
-	typedef Uarts::Uart<> Uart;
 }//Mcudrv
 
 void utoa(int32_t value, unsigned char* ptr, uint8_t base) //TODO: move to source file
