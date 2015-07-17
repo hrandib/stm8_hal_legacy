@@ -47,7 +47,6 @@ namespace Mcudrv
 		}
 	}
 
-
 	class GpioBase
 	{
 	private:
@@ -66,7 +65,6 @@ namespace Mcudrv
 		};
 		enum DontCareConfiguration{ None };
 	};
-
 
 	template <uint16_t baseaddr, uint8_t ID>
 	class Gpio: public GpioBase
@@ -180,6 +178,54 @@ namespace Mcudrv
 		}
 	};
 
+	struct GpioNull : public GpioBase
+	{
+		typedef GpioNull Base;
+		typedef uint8_t DataT;
+		enum{ Width = 8 };
+		enum{ id = 0xFF };
+		#pragma inline=forced
+		template <uint8_t mask, Cfg cfg>
+		static void SetConfig()
+		{	}
+		#pragma inline=forced
+		template <uint8_t mask, Cfg cfg>
+		static void WriteConfig()
+		{	}
+		#pragma inline=forced
+		template <uint8_t value>
+		static void Write()
+		{	}
+		#pragma inline=forced
+		static void Write(uint8_t value)
+		{	}
+		#pragma inline=forced
+		template <uint8_t mask>
+		static void Set()
+		{	}
+		#pragma inline=forced
+		static void Set(uint8_t mask)
+		{	}
+		#pragma inline=forced
+		template <uint8_t mask>
+		static void Clear()
+		{	}
+		#pragma inline=forced
+		static void Clear(uint8_t mask)
+		{	}
+		#pragma inline=forced
+		template <uint8_t mask>
+		static void Toggle()
+		{	}
+		#pragma inline=forced
+		static void Toggle(uint8_t mask)
+		{	}
+		#pragma inline=forced
+		template<uint8_t clearmask, uint8_t setmask>
+		static void ClearAndSet()
+		{	}
+	};
+
 #define PORTDEF(x,y) typedef Gpio<GPIO##x##_BaseAddress, y> Gpio##x	
 
 	PORTDEF(A, 0);
@@ -191,9 +237,6 @@ namespace Mcudrv
 	PORTDEF(G, 6);
 	PORTDEF(H, 7);
 	PORTDEF(I, 8);
-
-	#define GPIOZ_BaseAddress 0
-	PORTDEF(Z, 0xff);					//null port
 
 	template <typename PORT, uint8_t MASK>
 	class TPin
@@ -275,7 +318,7 @@ namespace Mcudrv
 	PINSDEF(G,g);
 	PINSDEF(H,h);
 	PINSDEF(I,i);
-	typedef TPin<GpioZ, 0x0> Nullpin;
+	typedef TPin<GpioNull, 0x0> Nullpin;
 
 #define	P0	0x01
 #define	P1	0x02

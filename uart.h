@@ -11,7 +11,7 @@ namespace Mcudrv
 
 namespace Uarts
 {
-	typedef uint16_t BaudRate;
+	typedef uint32_t BaudRate;
 
 	enum Cfg
 	{
@@ -89,69 +89,36 @@ namespace Uarts
 	};
 	namespace Internal
 	{
-
-	template<typename Pin>
-	class UartTraits
-	{
-	public:
-		#pragma inline=forced
-		static void Set()
+		template<uint16_t base>	struct Base;
+		template<> struct Base<UART1_BaseAddress>
 		{
-			Pin::Set();
-		}
-		#pragma inline=forced
-		static void Clear()
+			typedef UART1_TypeDef type;
+			typedef Pd5 TxPin;
+			typedef Pd6 RxPin;
+		};
+		template<> struct Base<UART2_BaseAddress>
 		{
-			Pin::Clear();
-		}
-		#pragma inline=forced
-		static void SetConfig()
-		{
-			Pin::template SetConfig<GpioBase::Out_PushPull_fast>();
-			Pin::Clear();
-		}
-	};
-
-	template<>
-	class UartTraits<Nullpin>
-	{
-	public:
-		#pragma inline=forced
-		static void Set(){}
-		#pragma inline=forced
-		static void Clear(){}
-		#pragma inline=forced
-		static void SetConfig(){}
-	};
-
-	template<uint16_t base>
-	struct Base;
-	template<> struct Base<UART1_BaseAddress>
-	{
-		typedef UART1_TypeDef type;
-	};
-	template<> struct Base<UART2_BaseAddress>
-	{
-		typedef UART2_TypeDef type;
-	};
-
+			typedef UART2_TypeDef type;
+			typedef Pd5 TxPin;
+			typedef Pd6 RxPin;
+		};
 	}//Internal
 
 	//class based on polling routines
 	template<typename DEpin = Nullpin>
 	class Uart
 	{
-	protected:
-		typedef Internal::UartTraits<DEpin> ControlPin;
 	public:
 		static const uint16_t BaseAddr =
-   #if defined (STM8S103) || defined (STM8S003)
+#if defined (STM8S103) || defined (STM8S003)
 			   UART1_BaseAddress
-   #elif defined (STM8S105)
+#elif defined (STM8S105)
 			   UART2_BaseAddress
-   #endif
+#endif
 				;
 		typedef Internal::Base<BaseAddr>::type BaseType;
+		typedef Internal::Base<BaseAddr>::TxPin TxPin;
+		typedef Internal::Base<BaseAddr>::RxPin RxPin;
 
 		#pragma inline=forced
 		static BaseType* Regs()
@@ -169,11 +136,24 @@ namespace Uarts
 			Regs()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);
 			Regs()->BRR1 = (Div >> 4U) & 0xFF;
 			Regs()->CR1 = static_cast<uint32_t>(config) & 0xFF;
-			Regs()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF;
+		//	Regs()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF; //Need for synchronuos communication
 			Regs()->CR5 = (static_cast<uint32_t>(config) >> 24) & 0xFF;
 			Regs()->CR2 = (static_cast<uint32_t>(config) >> 8) & 0xFF;
-//			EnableInterrupt<DefaultInts>();
-			ControlPin::SetConfig();
+			DEpin::template SetConfig<GpioBase::Out_PushPull_fast>();
+			TxPin::SetConfig<GpioBase::Out_PushPull_fast>();
+			RxPin::SetConfig<GpioBase::In_Pullup>();
+		}
+
+		#pragma inline=forced
+		static void DriverEnable()
+		{
+			DEpin::Set();
+		}
+		#pragma inline=forced
+		static void DriverDisable()
+		{
+			while(!IsEvent(EvTxComplete));
+			DEpin::Clear();
 		}
 
 		#pragma inline=forced
@@ -188,12 +168,12 @@ namespace Uarts
 			return Regs()->SR & event;
 		}
 		
-		#pragma inline=forced
-		static bool IsBusy()
-		{
-			return Regs()->CR2 & IrqTxEmpty;
-		}		
-			
+//		#pragma inline=forced
+//		static bool IsBusy()
+//		{
+//			return Regs()->CR2 & IrqTxEmpty;
+//		}
+
 		#pragma inline=forced
 		static void ClearEvent(const Events event)
 		{
@@ -213,7 +193,8 @@ namespace Uarts
 
 		static void Putch(const uint8_t ch)
 		{
-			while(!IsEvent(EvTxEmpty));
+			while(!IsEvent(EvTxEmpty))
+				;
 			Regs()->DR = ch;
 		}
 		static void Puts(const uint8_t* s)
@@ -243,12 +224,11 @@ namespace Uarts
 				Putch(*buf++);
 			}
 		}
-#define USARTECHO
 		static uint8_t Getch()
 		{
 			while (!IsEvent(EvRxne));
 			uint8_t ch = Regs()->DR;
-#ifdef USARTECHO
+#ifdef UARTECHO
 			Regs()->DR = ch;
 #endif
 			return ch;
@@ -256,8 +236,8 @@ namespace Uarts
 	};
 
 	//class based on interrupts and circular buffer
-	template<typename T>
-	class UartIrq : public Uart<T>
+	template<typename T = Nullpin>
+	class UartIrq : public Uart<>
 	{
 
 	};
