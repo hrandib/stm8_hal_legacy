@@ -1,10 +1,10 @@
 #pragma once
 #include "stm8s.h"
-//#include "static_assert.h"
 #include "gpio.h"
 #include "cstring"
+#include "circularBuffer.h"
 
-void utoa(uint16_t value, unsigned char* ptr, uint8_t base = 10);
+uint8_t* utoa(int32_t value, unsigned char* ptr, uint8_t base = 10);
 
 namespace Mcudrv
 {
@@ -82,7 +82,7 @@ namespace Uarts
 		IrqParityEnable = UART1_CR1_PIEN,
 //		---================---			
 		IrqTxEmpty = UART1_CR2_TIEN,
-		IrqTxCompletet = UART1_CR2_TCIEN,
+		IrqTxComplete = UART1_CR2_TCIEN,
 		IrqRxne = UART1_CR2_RIEN,
 		IrqIdle = UART1_CR2_ILIEN,
 		IrqDefault = UART1_CR2_TCIEN | UART1_CR2_RIEN	//TX complete and RX not empty
@@ -105,7 +105,6 @@ namespace Uarts
 	}//Internal
 
 	//class based on polling routines
-	template<typename DEpin = Nullpin>
 	class Uart
 	{
 	public:
@@ -136,24 +135,12 @@ namespace Uarts
 			Regs()->BRR2 = ((Div >> 8U) & 0xF0) | (Div & 0x0F);
 			Regs()->BRR1 = (Div >> 4U) & 0xFF;
 			Regs()->CR1 = static_cast<uint32_t>(config) & 0xFF;
-		//	Regs()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF; //Need for synchronuos communication
+		//	Regs()->CR3 = (static_cast<uint32_t>(config) >> 16) & 0xFF; //Need for synchronuos communication and LIN
 			Regs()->CR5 = (static_cast<uint32_t>(config) >> 24) & 0xFF;
 			Regs()->CR2 = (static_cast<uint32_t>(config) >> 8) & 0xFF;
-			DEpin::template SetConfig<GpioBase::Out_PushPull_fast>();
+
 			TxPin::SetConfig<GpioBase::Out_PushPull_fast>();
 			RxPin::SetConfig<GpioBase::In_Pullup>();
-		}
-
-		#pragma inline=forced
-		static void DriverEnable()
-		{
-			DEpin::Set();
-		}
-		#pragma inline=forced
-		static void DriverDisable()
-		{
-			while(!IsEvent(EvTxComplete));
-			DEpin::Clear();
 		}
 
 		#pragma inline=forced
@@ -236,11 +223,56 @@ namespace Uarts
 	};
 
 	//class based on interrupts and circular buffer
-	template<typename T = Nullpin>
-	class UartIrq : public Uart<>
+	template<uint16_t TxBufSize = 16, uint16_t RxBufSize = TxBufSize, typename DEpin = Nullpin>
+	class UartIrq : public Uart
 	{
+	protected:
+		typedef Uart Base;
+		typedef UartIrq<TxBufSize, RxBufSize, DEpin> Self;
+		static CircularBuffer<TxBufSize> txbuf_;
+		static CircularBuffer<RxBufSize> rxbuf_;
+	public:
+		enum
+		{
+			TXBUFSIZE = TxBufSize,
+			RXBUFSIZE = RxBufSize
+		};
 
-	};
+		#pragma inline=forced
+		template<Cfg config, BaudRate baud = 9600UL>
+		static void Init()
+		{
+			Base::Init<config, baud>();
+			DEpin::template SetConfig<GpioBase::Out_PushPull_fast>();
+			EnableInterrupt(Irqs(IrqRxne | IrqTxComplete));
+		}
+
+		static bool Putch(const uint8_t c)
+		{
+			bool st = txbuf_.Write(c);
+			EnableInterrupt(IrqTxEmpty);
+			return st;
+		}
+		static bool Puts(const uint8_t* s)
+		{
+			while(*s)
+			{
+				if(!txbuf_.Write(*s++)) return false;
+			}
+			EnableInterrupt(IrqTxEmpty);
+			return true;
+		}
+		static bool Puts(const char* s)
+		{
+			return Puts((const uint8_t*)s);
+		}
+		template<typename T>
+		static bool Puts(T value)
+		{
+			uint8_t buf[10];
+			return Puts(utoa((int32_t)value, buf));
+		}
+
 
 // Int driven functions
 /*		static void Putbuf(const uint8_t *buf, uint8_t size)
@@ -280,69 +312,72 @@ namespace Uarts
 			static_assert(sizeof(byte) == 1, "Type size for Putbyte func must be 1");
 			Putbuf(&byte, 1);
 		}
-
+*/
 		static void Newline()
 		{
 			Puts("\r\n");
 		}
-*/
-/*#if defined (STM8S103) || defined (STM8S003)
-			_Pragma("vector=17")
+		#pragma inline=forced
+		static bool Getch(uint8_t &c)
+		{
+			return rxbuf_.Read(c);
+		}
+
+#if defined (STM8S103) || defined (STM8S003)
+			_Pragma(VECTOR_ID(UART1_T_TXE_vector))
 #elif defined (STM8S105)
-			_Pragma("vector=20")
+			_Pragma(VECTOR_ID(UART2_T_TXE_vector))
 #endif
 		__interrupt static void TxIRQ()
-		{		
-			static uint8_t count;
+		{
 			if (IsEvent(EvTxComplete))
 			{
 				ClearEvent(EvTxComplete);
-				ControlPin::Clear();
+				DEpin::Clear();
 			}
 			else //if (IsEvent(TxEmpty))
 			{
-				if (++count < size_)
-				{
-					Regs()->DR = pBuf_[count];
-				}
+				uint8_t c;
+				if(txbuf_.Read(c))
+					Regs()->DR = c;
 				else
-				{
-					DisableInterrupt(TxEmptyInt);
-					count = 0;
-				}
+					DisableInterrupt(IrqTxEmpty);
 			}
 
 		}
 
 #if defined (STM8S103) || defined (STM8S003)
-			_Pragma("vector=18")
+			_Pragma(VECTOR_ID(UART1_R_RXNE_vector))
 #elif defined (STM8S105)
-			_Pragma("vector=21")
+			_Pragma(VECTOR_ID(UART2_R_RXNE_vector))
 #endif
 			__interrupt static void RxIRQ()
 		{
-			bool error = IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
+			bool error = IsEvent(Events(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
+			uint8_t c = Regs()->DR;
+			error |= !rxbuf_.Write(c); //buffer is full
 			if(error) return;
-			uint8_t temp = Regs()->DR;
-			//Rxbuf::Push(temp);
-			Regs()->DR = temp;			//echo
+#ifdef UARTECHO
+			Regs()->DR = c;			//echo
+#endif
 		}
 	};
-	
-	template<typename DEpin>
-	uint8_t Uart<DEpin>::size_;
-	template<typename DEpin>
-	uint8_t const *Uart<DEpin>::pBuf_;
-*/
+
+	template<uint16_t TxBufSize, uint16_t RxBufSize, typename DEpin>
+	CircularBuffer<TxBufSize> UartIrq<TxBufSize, RxBufSize, DEpin>::txbuf_;
+	template<uint16_t TxBufSize, uint16_t RxBufSize, typename DEpin>
+	CircularBuffer<RxBufSize> UartIrq<TxBufSize, RxBufSize, DEpin>::rxbuf_;
+
+
 }//Uarts
 }//Mcudrv
 
-void utoa(int32_t value, unsigned char* ptr, uint8_t base) //TODO: move to source file
+uint8_t* utoa(int32_t value, uint8_t* ptr, uint8_t base) //TODO: move to source file
 {
 	uint32_t quotient = value < 0 ? -value : value;
 	unsigned char *ptr1 = ptr, tmp_char;
 	// check that the base if valid
-	if (base < 2 || base > 36) { *ptr = '\0'; return; }
+	if (base < 2 || base > 36) { *ptr = '\0'; return NULL; }
 	do {
 		const uint32_t q = quotient / base;
 		const uint32_t rem = quotient - q * base;
@@ -356,6 +391,6 @@ void utoa(int32_t value, unsigned char* ptr, uint8_t base) //TODO: move to sourc
 		*ptr-- = *ptr1;
 		*ptr1++ = tmp_char;
 	}
-	return;
+	return ptr;
 }
 

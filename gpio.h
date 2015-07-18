@@ -47,11 +47,8 @@ namespace Mcudrv
 		}
 	}
 
-	class GpioBase
+	struct GpioBase
 	{
-	private:
-
-	public:
 		enum Cfg
 		{
 			In_float,
@@ -63,11 +60,11 @@ namespace Mcudrv
 			Out_PushPull,
 			Out_PushPull_fast
 		};
-		enum DontCareConfiguration{ None };
+		enum DontCareConfiguration{ None };		
 	};
 
 	template <uint16_t baseaddr, uint8_t ID>
-	class Gpio: public GpioBase
+	class Gpio : GpioBase
 	{
 	private:
 		#pragma inline=forced
@@ -178,7 +175,7 @@ namespace Mcudrv
 		}
 	};
 
-	struct GpioNull : public GpioBase
+	struct GpioNull : GpioBase
 	{
 		typedef GpioNull Base;
 		typedef uint8_t DataT;
