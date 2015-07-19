@@ -3,8 +3,9 @@
 #include "gpio.h"
 #include "cstring"
 #include "circularBuffer.h"
+#include "string_utils.h"
 
-uint8_t* utoa(int32_t value, unsigned char* ptr, uint8_t base = 10);
+
 
 namespace Mcudrv
 {
@@ -267,10 +268,10 @@ namespace Uarts
 			return Puts((const uint8_t*)s);
 		}
 		template<typename T>
-		static bool Puts(T value)
+		static bool Puts(T value, uint8_t base = 10)
 		{
 			uint8_t buf[10];
-			return Puts(utoa((int32_t)value, buf));
+			return Puts(io::xtoa(value, buf, base));
 		}
 
 
@@ -353,10 +354,11 @@ namespace Uarts
 #endif
 			__interrupt static void RxIRQ()
 		{
-			bool error = IsEvent(Events(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
+//			bool error = IsEvent(Events(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
 			uint8_t c = Regs()->DR;
-			error |= !rxbuf_.Write(c); //buffer is full
-			if(error) return;
+//			error |= !					//buffer is full
+			rxbuf_.Write(c);
+//			if(error) return;
 #ifdef UARTECHO
 			Regs()->DR = c;			//echo
 #endif
@@ -372,25 +374,4 @@ namespace Uarts
 }//Uarts
 }//Mcudrv
 
-uint8_t* utoa(int32_t value, uint8_t* ptr, uint8_t base) //TODO: move to source file
-{
-	uint32_t quotient = value < 0 ? -value : value;
-	unsigned char *ptr1 = ptr, tmp_char;
-	// check that the base if valid
-	if (base < 2 || base > 36) { *ptr = '\0'; return NULL; }
-	do {
-		const uint32_t q = quotient / base;
-		const uint32_t rem = quotient - q * base;
-		quotient = q;
-		*ptr++ = (rem < 10 ? '0' : 'a' - 10) + rem;
-	} while ( quotient );
-	*ptr-- = '\0';
-	while (ptr1 < ptr)
-	{
-		tmp_char = *ptr;
-		*ptr-- = *ptr1;
-		*ptr1++ = tmp_char;
-	}
-	return ptr;
-}
 
