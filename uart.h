@@ -274,8 +274,6 @@ namespace Uarts
 			return Puts(io::xtoa(value, buf, base));
 		}
 
-
-// Int driven functions
 /*		static void Putbuf(const uint8_t *buf, uint8_t size)
 		{
 			while (IsBusy());
@@ -291,27 +289,6 @@ namespace Uarts
 		{
 			static_assert(sizeof(T) == 1, "Type size for Putbuf func must be 1");
 			Putbuf(reinterpret_cast<const uint8_t* >(buf), size);
-		}
-
-		template<typename T>
-		static void Puts(T *str)
-		{
-			static_assert(sizeof(T) == 1, "Type size for Puts func must be 1");
-			Putbuf(reinterpret_cast<const char*>(str), strlen(reinterpret_cast<const char*>(str)));
-		}
-
-		static void Puts(uint16_t value)
-		{
-			uint8_t buf[6];
-			utoa(value, buf);
-			Puts(buf);
-		}
-
-		template<typename T>
-		static void Putbyte(T byte)
-		{
-			static_assert(sizeof(byte) == 1, "Type size for Putbyte func must be 1");
-			Putbuf(&byte, 1);
 		}
 */
 		static void Newline()

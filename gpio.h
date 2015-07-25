@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stm8s.h"
+#include "type_traits.h"
 
 namespace Mcudrv
 {
@@ -221,6 +222,16 @@ namespace Mcudrv
 		template<uint8_t clearmask, uint8_t setmask>
 		static void ClearAndSet()
 		{	}
+		#pragma inline=forced
+		static uint8_t Read()
+		{
+			return 0;
+		}
+		#pragma inline=forced
+		static uint8_t ReadODR()
+		{
+			return 0;
+		}
 	};
 
 #define PORTDEF(x,y) typedef Gpio<GPIO##x##_BaseAddress, y> Gpio##x	
@@ -235,51 +246,54 @@ namespace Mcudrv
 	PORTDEF(H, 7);
 	PORTDEF(I, 8);
 
-	template <typename PORT, uint8_t MASK>
+	template <typename Port_, uint8_t Mask_>
 	class TPin
 	{
 	public:
-		typedef PORT Port;
-		enum { Mask = MASK };
-		enum { port_id = Port::id };
-		
+		typedef Port_ Port;
+		enum
+		{
+			mask = Mask_,
+			position = stdx::MaskToPosition<mask>::value,
+			port_id = Port::id
+		};
 		#pragma inline=forced
 		template <GpioBase::Cfg cfg>
 		static void SetConfig()
 		{
-			Port::template SetConfig<Mask, cfg>();
+			Port::template SetConfig<mask, cfg>();
 		}
 		
 		#pragma inline=forced
 		static void Set()
 		{
-			Port::template Set<Mask>();
+			Port::template Set<mask>();
 		}
 		#pragma inline=forced
 		static void SetOrClear(bool cond)
 		{
-			if (cond) Port::template Set<Mask>();
-			else Port::template Clear<Mask>();
+			if (cond) Port::template Set<mask>();
+			else Port::template Clear<mask>();
 		}
 		#pragma inline=forced
 		static void Clear()
 		{
-			Port::template Clear<Mask>();
+			Port::template Clear<mask>();
 		}
 		#pragma inline=forced
 		static void Toggle()
 		{
-			Port::template Toggle<Mask>();
+			Port::template Toggle<mask>();
 		}
 		#pragma inline=forced
 		static bool IsSet()
 		{
-			return Port::Read() & Mask;
+			return Port::Read() & mask;
 		}
 		#pragma inline=forced
 		static bool IsODRSet()
 		{
-			return Port::ReadODR() & Mask;
+			return Port::ReadODR() & mask;
 		}
 	};
 
