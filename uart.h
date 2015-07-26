@@ -274,15 +274,16 @@ namespace Uarts
 			return Puts(io::xtoa(value, buf, base));
 		}
 
-/*		static void Putbuf(const uint8_t *buf, uint8_t size)
+		static bool Putbuf(const uint8_t* buf, uint16_t size)
 		{
-			while (IsBusy());
-			ControlPin::Set();
-			size_ = size;
-			pBuf_ = buf;
-			Regs()->DR = buf[0];
-			EnableInterrupt(TxEmptyInt);
+			while(size--)
+			{
+				if(!txbuf_.Write(*buf++)) return false;
+			}
+			EnableInterrupt(IrqTxEmpty);
+			return true;
 		}
+
 		#pragma inline=forced
 		template<typename T>
 		static void Putbuf(T *buf, uint8_t size)
@@ -290,7 +291,7 @@ namespace Uarts
 			static_assert(sizeof(T) == 1, "Type size for Putbuf func must be 1");
 			Putbuf(reinterpret_cast<const uint8_t* >(buf), size);
 		}
-*/
+
 		static void Newline()
 		{
 			Puts("\r\n");
