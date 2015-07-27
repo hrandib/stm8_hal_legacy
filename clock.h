@@ -3,7 +3,7 @@
 #include "stdint.h"
 #include "stm8s.h"
 
-const uint32_t F_CPU = 16000000UL;
+static const uint32_t F_CPU = 16000000UL;
 
 namespace Mcudrv {
 namespace SysClock {

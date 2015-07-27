@@ -630,14 +630,14 @@ namespace Mcudrv
 	{
 			enum Div
 			{
-				Div1,
-				Div2,
-				Div4,
-				Div8,
-				Div16,
-				Div32,
-				Div64,
-				Div128
+				Div_1,
+				Div_2,
+				Div_4,
+				Div_8,
+				Div_16,
+				Div_32,
+				Div_64,
+				Div_128
 			};
 
 			enum Cfg
@@ -654,39 +654,48 @@ namespace Mcudrv
 		class Timer4
 		{
 		public:
+			#pragma inline=forced
 			static void Init(const Div Divider, const Cfg Config)
 			{
 				TIM4->PSCR = Divider;
 				TIM4->CR1 = Config;
 			}
+			#pragma inline=forced
 			static void Enable()
 			{
 				TIM4->CR1 |= TIM4_CR1_CEN;
 			}
+			#pragma inline=forced
 			static void Disable()
 			{
 				TIM4->CR1 &= ~TIM4_CR1_CEN;
 			}
-			static void Clear()
+			#pragma inline=forced
+			static void ResetCounter()
 			{
 				TIM4->CNTR = 0;
 			}
+			#pragma inline=forced
 			static void EnableInterrupt() // Only one interrupt on that vector (Update)
 			{
-				TIM4->IER |= TIM4_IER_UIE;
+				TIM4->IER = TIM4_IER_UIE;
 			}
+			#pragma inline=forced
 			static void DisableInterrupt()
 			{
-				TIM4->IER &= ~TIM4_IER_UIE;
+				TIM4->IER = 0;
 			}
+			#pragma inline=forced
 			static bool CheckIntStatus()		
 			{
-				return TIM4->SR1 & TIM4_SR1_UIF;
+				return TIM4->SR1;
 			}
+			#pragma inline=forced
 			static void ClearIntFlag()
 			{
-				TIM4->SR1 &= ~TIM4_SR1_UIF;
+				TIM4->SR1 = 0;
 			}
+			#pragma inline=forced
 			static void WriteCounter(uint8_t c)
 			{
 				TIM4->CNTR = c;
