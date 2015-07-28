@@ -174,6 +174,12 @@ namespace Mcudrv
 			const DataT value = setmask & ~clearmask;
 			GetBase()->ODR = value;
 		}
+		#pragma inline=forced
+		static void ClearAndSet(uint8_t clearmask, uint8_t setmask)
+		{
+			const DataT value = setmask & ~clearmask;
+			GetBase()->ODR = value;
+		}
 	};
 
 	struct GpioNull : GpioBase

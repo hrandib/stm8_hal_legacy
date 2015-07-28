@@ -1,7 +1,7 @@
 /*************************************************
 *
 *		Module based on ST AN3281
-*		STM8 I2C Optimized examples
+*		STM8 I2C optimized examples
 *
 * ***********************************************/
 
@@ -18,8 +18,6 @@
 
 namespace Mcudrv
 {
-
-typedef Pd2 TestLed;
 
 namespace n_i2c
 {
@@ -69,25 +67,13 @@ namespace n_i2c
 		static volatile States state_;
 		static volatile uint8_t err_state_;  	// error state
 		static volatile uint8_t err_save_;   	// I2C->SR2 copy in case of error
-		static volatile uint16_t TIM4_tout_;  // Timeout Value
+		static volatile uint8_t TIM4_tout_;  // Timeout Value
 
 		static Direction direction_;
 		static uint8_t numByte_;
 		static uint8_t* dataBuffer_;
 		static SlaveAddr_t slaveAddr_;
 		static StopMode noStop_;
-		#pragma inline=forced
-		static void delay(uint16_t a)
-		{
-			TIM4_tout_ = a;
-			while(TIM4_tout_)
-				;
-		}
-		#pragma inline=forced
-		static uint16_t tout()
-		{
-			return TIM4_tout_;
-		}
 		#pragma inline=forced
 		static void set_tout_ms(uint16_t a)
 		{
@@ -97,18 +83,19 @@ namespace n_i2c
 		static void Init()
 		{
 			//define SDA, SCL outputs, HiZ, Open drain, Fast
+			GpioE::Set(P1 | P2);
 			GpioE::SetConfig<P1 | P2, GpioBase::Out_OpenDrain_fast>();
 			enum
 			{
-				freqr = (uint8_t)(F_CPU / 1e6),
-				tcpu_ns = 1000 / freqr
+				freqr = (uint8_t)(F_CPU / 1e6),		//Clock frequency in MHz
+				tcpu_ns = 1000 / freqr				//CPU cycle in ns
 			};
 			I2C->FREQR = freqr;               // input clock to I2C = F_CPU
 			if(mode == Fast)
 			{
-				I2C->CCRL = 900 / tcpu_ns + 1;		// 900/62.5= 15, (SCLhi must be at least 600+300=900ns!) round upward
+				I2C->CCRL = 900 / tcpu_ns + 1;		// 900/62.5= 15, (SCLhi must be at least 600+300=900ns!)
 				I2C->CCRH = 0x80;					// fast mode, duty 2/1 (bus speed 62.5*3*15~356kHz)
-				I2C->TRISER = 300 / tcpu_ns + 1;	// 300/62.5 + 1= 5  (maximum 300ns)
+				I2C->TRISER = 300 / tcpu_ns + 1;	// 300/62.5 + 1 = 5  (maximum 300ns)
 			}
 			else //if(mode == Standard)
 			{
@@ -118,29 +105,27 @@ namespace n_i2c
 			}
 			I2C->OARL = 0xA0;              // own address A0;
 			I2C->OARH |= 0x40;
-			//I2C->ITR = I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;	// enable Event & error interrupts
+			I2C->ITR = I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;	// enable Event & error interrupts
 			I2C->CR2 |= I2C_CR2_ACK;		// ACK=1, Ack enable
 			I2C->CR1 |= I2C_CR1_PE;			// PE=1
 			I2C->CR1 &= ~I2C_CR1_NOSTRETCH;	// Stretch enable
-
-			//TIM4_Init
-			using namespace T4;
-			Timer4::WriteAutoReload(0x80);
-			Timer4::EnableInterrupt();
-			Timer4::Init(Div_128, CEN);		//1ms interrupts
 
 			// Initialise I2C State Machine
 //			err_save_ = 0;
 //			state_ == INI_00;
 //			set_tout_ms(0);
+
+			using namespace T4;
+			Timer4::WriteAutoReload(freqr * 8);
+			Timer4::EnableInterrupt();
+			Timer4::Init(Div_128, CEN);		//1ms interrupts
 		}
 
 		static void ErrProc()
 		{
-			Red::Set();
-			err_save_ = I2C->SR2 ;
+			err_save_ = I2C->SR2;
 			err_state_ = state_;
-			I2C->SR2= 0;
+			I2C->SR2 = 0;
 			state_ = INI_00;
 			set_tout_ms(0);
 		}
@@ -172,10 +157,10 @@ namespace n_i2c
 			return true;
 		}
 
-		static bool Read(SlaveAddr_t slaveAddr, StopMode noStop, uint8_t numByteToRead, uint8_t* dataBuffer)
+		static bool Read(SlaveAddr_t slaveAddr, uint8_t numByteToRead, uint8_t* dataBuffer)
 		{
 			// check if communication on going
-			if ((I2C->SR3 & I2C_SR3_BUSY) && (noStop == Stop))
+			if (I2C->SR3 & I2C_SR3_BUSY)
 				return false;
 			// check if STATE MACHINE is in state INI_00
 			if (state_ != INI_00)
@@ -186,8 +171,8 @@ namespace n_i2c
 			I2C->CR2 &= ~I2C_CR2_POS;
 			// setup I2C comm. in Read
 			direction_ = DirRead;
-			// copy parametters for interrupt routines
-			noStop_ = noStop;
+			// copy parameters for interrupt routines
+			noStop_ = NoStop;
 			slaveAddr_ = slaveAddr;
 			numByte_ = numByteToRead;
 			dataBuffer_  = dataBuffer;
@@ -201,16 +186,13 @@ namespace n_i2c
 		}
 
 		_Pragma(VECTOR_ID(I2C_SB_vector))
-		__interrupt static void I2cIRQ()
+		__interrupt static void I2CIRQ()
 		{
-			SetGreen();
-			u8 sr1, sr2;//, cr2;
-			volatile uint8_t dummy, cr2;
+			uint8_t sr1, sr2;
+			volatile uint8_t dummy;
 			/* Get Value of Status registers and Control register 2 */
 			sr1 = I2C->SR1;
 			sr2 = I2C->SR2;
-			cr2 = I2C->CR2;
-
 			/* Check for error in communication */
 			if (sr2 != 0)
 			{
@@ -225,24 +207,24 @@ namespace n_i2c
 				case SB_01:
 					if (addrType == Addr10bit)
 					{
-						I2C->DR = (u8)(((slaveAddr_ >> 7) & 6) | 0xF0);  // send header of 10-bit device address (R/W = 0)
+						I2C->DR = (uint8_t)(((slaveAddr_ >> 7) & 6) | 0xF0);  // send header of 10-bit device address (R/W = 0)
 						state_ = ADD10_02;
 						break;
 					} else {
-						I2C->DR = (u8)(slaveAddr_ << 1);   // send 7-bit device address & Write (R/W = 0)
+						I2C->DR = (uint8_t)(slaveAddr_ << 1);   // send 7-bit device address & Write (R/W = 0)
 						state_ = ADDR_03;
 						break;
 					}
 				case SB_11:
 					if (addrType == Addr10bit)
 					{
-						I2C->DR = (u8)(((slaveAddr_ >> 7) & 6) | 0xF1);// send header of 10-bit device address (R/W = 1)
+						I2C->DR = (uint8_t)(((slaveAddr_ >> 7) & 6) | 0xF1);// send header of 10-bit device address (R/W = 1)
 					} else {
-						I2C->DR = (u8)(slaveAddr_ << 1) | 1 ; // send 7-bit device address & Write (R/W = 1)
+						I2C->DR = (uint8_t)(slaveAddr_ << 1) | 1 ; // send 7-bit device address & Write (R/W = 1)
 					}
 					state_ = ADDR_13;
 					break;
-				default : ErrProc();
+				default: ErrProc();
 					break;
 				}
 			}
@@ -251,11 +233,10 @@ namespace n_i2c
 				switch(state_)
 				{
 				case ADD10_02:
-					I2C->DR = (u8)(slaveAddr_);                // send lower 8-bit device address & Write
+					I2C->DR = (uint8_t)(slaveAddr_);                // send lower 8-bit device address & Write
 					state_ = ADDR_03;
 					break;
-
-				default : ErrProc();
+				default: ErrProc();
 					break;
 				}
 			}
@@ -312,7 +293,7 @@ namespace n_i2c
 					break;
 				}
 			}
-			if (sr1  & I2C_SR1_RXNE)
+			if (sr1 & I2C_SR1_RXNE)
 			{
 				switch (state_)
 				{
@@ -388,8 +369,6 @@ namespace n_i2c
 				{
 					ErrProc();
 				}
-			__no_operation();
-			__no_operation();
 		}
 	};
 	template<Mode mode, AddrType addrType>
@@ -402,7 +381,7 @@ namespace n_i2c
 	volatile uint8_t i2c<mode, addrType>::err_save_;
 
 	template<Mode mode, AddrType addrType>
-	volatile uint16_t i2c<mode, addrType>::TIM4_tout_;
+	volatile uint8_t i2c<mode, addrType>::TIM4_tout_;
 
 	template<Mode mode, AddrType addrType>
 	i2c<mode, addrType>::Direction i2c<mode, addrType>::direction_;
