@@ -61,8 +61,7 @@ namespace n_i2c
 			BTF_15 = 15,
 			RXNE_16 = 16,
 			BTF_17 = 17,
-			RXNE_18 = 18,
-			NACK_10
+			RXNE_18 = 18
 		};
 		enum Direction
 		{
@@ -126,6 +125,16 @@ namespace n_i2c
 			Timer4::EnableInterrupt();
 			Timer4::Init(Div_128, CEN);		//1ms interrupts
 		}
+		#pragma inline=forced
+		static bool IsBusy()
+		{
+			return I2C->SR3 & I2C_SR3_BUSY;
+		}
+		#pragma inline=forced
+		static bool IsInitialState()
+		{
+			return state_ == INI_00;
+		}
 
 		static bool IsEnabled()
 		{
@@ -137,27 +146,19 @@ namespace n_i2c
 		{
 			err_save_ = I2C->SR2;
 			err_state_ = state_;
-			I2C->CR2 = I2C_CR2_SWRST;
-			I2C->CR1 = 0; //~I2C_CR1_PE;
+//			I2C->CR2 = I2C_CR2_SWRST;
+//			I2C->CR1 = 0; //~I2C_CR1_PE;
 			state_ = INI_00;
-			I2C->CR2 = 0;
-			Init();
+//			I2C->CR2 = 0;
+//			Init();
 			set_tout_ms(0);
 			Led2::Toggle();
 		}
 
 		static bool Write(SlaveAddr_t slaveAddr, StopMode noStop, const uint8_t numByteToWrite, const uint8_t* dataBuffer)
 		{
-			Uart::Puts("\r\nState: ");
-			Uart::Puts((uint8_t)state_);
-			Uart::Puts("\r\nBusy?: ");
-			Uart::Puts(IsBusy() ? "True" : "False");
-			Uart::Newline();
-			bool result = true;
-			if(state_ == NACK_10)
-				result = false;
 			// check if communication on going && if STATE MACHINE is in state INI_00
-			else if(!IsInitialState() || IsBusy())
+			if(IsBusy() || !IsInitialState())
 				return false;
 			// set ACK
 			I2C->CR2 |= I2C_CR2_ACK;
@@ -175,27 +176,13 @@ namespace n_i2c
 			// generate Start
 			state_ = SB_01;
 			I2C->CR2 |= I2C_CR2_START;
-			return result;
-		}
-
-		#pragma inline=forced
-		static bool IsBusy()
-		{
-			return I2C->SR3 & I2C_SR3_BUSY;
-		}
-		#pragma inline=forced
-		static bool IsInitialState()
-		{
-			return state_ == INI_00;
+			return true;
 		}
 
 		static bool Read(SlaveAddr_t slaveAddr, StopMode noStop, uint8_t numByteToRead, uint8_t* dataBuffer)
 		{
-			bool result = true;
-			if(state_ == NACK_10)
-				result = false;
 			// check if communication on going && if STATE MACHINE is in state INI_00
-			else if((IsBusy() && noStop == Stop) || !IsInitialState())
+			if((IsBusy() && noStop == Stop) || !IsInitialState())
 				return false;
 			// set ACK
 			I2C->CR2 |= I2C_CR2_ACK;
@@ -214,7 +201,7 @@ namespace n_i2c
 			I2C->CR2 |= I2C_CR2_START;
 			state_ = SB_11;
 			I2C->ITR |= I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;  // re-enable interrupt
-			return result;
+			return true;
 		}
 
 		_Pragma(VECTOR_ID(I2C_SB_vector))
@@ -225,15 +212,11 @@ namespace n_i2c
 			/* Get Value of Status registers and Control register 2 */
 			sr1 = I2C->SR1;
 			sr2 = I2C->SR2;
+			dummy = I2C->CR2;
 			/* Check for error in communication */
 			if (sr2 != 0)
 			{
-				Uart::Putch('<');
-				Uart::Puts(sr2, 16);
-				Uart::Putch('>');
 				ErrProc();
-				state_ = NACK_10;
-				return;
 			}
 			/* Start bit detected */
 			if(sr1 & I2C_SR1_SB)
@@ -399,7 +382,7 @@ namespace n_i2c
 		_Pragma(VECTOR_ID(TIM4_OVR_UIF_vector))
 		__interrupt static void TimerIRQ()
 		{
-			T4::Timer4::ClearIntFlag();
+			T4::Timer4::ClearIntFlag();		//BUG: Check if busy flag set too long, reinit module in this case
 			if(TIM4_tout_)
 				if(--TIM4_tout_ == 0)
 				{
@@ -407,6 +390,7 @@ namespace n_i2c
 				}
 		}
 	};
+
 	template<Mode mode, AddrType addrType>
 	volatile i2c<mode, addrType>::States i2c<mode, addrType>::state_;
 
