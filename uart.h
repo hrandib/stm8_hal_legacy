@@ -289,7 +289,7 @@ namespace Uarts
 		static void Putbuf(T *buf, uint8_t size)
 		{
 			static_assert(sizeof(T) == 1, "Type size for Putbuf func must be 1");
-			Putbuf(reinterpret_cast<const uint8_t*>(buf), size);
+			Putbuf((const uint8_t*)buf, size);
 		}
 
 		static void Newline()
@@ -322,7 +322,7 @@ namespace Uarts
 				else
 					DisableInterrupt(IrqTxEmpty);
 			}
-
+			__no_operation();
 		}
 
 #if defined (STM8S103) || defined (STM8S003)

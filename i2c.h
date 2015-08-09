@@ -21,6 +21,11 @@ namespace Mcudrv
 
 namespace n_i2c
 {
+	enum
+	{
+		AddrLM75 = 0x48,
+		Addr24C = 0x50
+	};
 	enum Mode
 	{
 		Standard,
@@ -56,7 +61,8 @@ namespace n_i2c
 			BTF_15 = 15,
 			RXNE_16 = 16,
 			BTF_17 = 17,
-			RXNE_18 = 18
+			RXNE_18 = 18,
+			NACK_10
 		};
 		enum Direction
 		{
@@ -103,12 +109,12 @@ namespace n_i2c
 				I2C->CCRH = 0;						// standard mode, duty 1/1 bus speed 100kHz
 				I2C->TRISER = 1000 / tcpu_ns + 1;	// 1000ns/(125ns) + 1  (maximum 1000ns)
 			}
-			I2C->OARL = 0xA0;              // own address A0;
+//			I2C->OARL = 0xA0;              // own address A0;
 			I2C->OARH |= 0x40;
 			I2C->ITR = I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;	// enable Event & error interrupts
-			I2C->CR2 |= I2C_CR2_ACK;		// ACK=1, Ack enable
-			I2C->CR1 |= I2C_CR1_PE;			// PE=1
-			I2C->CR1 &= ~I2C_CR1_NOSTRETCH;	// Stretch enable
+			I2C->CR2 = I2C_CR2_ACK;		// ACK=1, Ack enable
+			I2C->CR1 = I2C_CR1_PE;			// PE=1
+//			I2C->CR1 &= ~I2C_CR1_NOSTRETCH;	// Stretch enable
 
 			// Initialise I2C State Machine
 //			err_save_ = 0;
@@ -121,22 +127,37 @@ namespace n_i2c
 			Timer4::Init(Div_128, CEN);		//1ms interrupts
 		}
 
+		static bool IsEnabled()
+		{
+			return I2C->CR1 & I2C_CR1_PE;
+		}
+
+		#pragma inline=forced
 		static void ErrProc()
 		{
 			err_save_ = I2C->SR2;
 			err_state_ = state_;
-			I2C->SR2 = 0;
+			I2C->CR2 = I2C_CR2_SWRST;
+			I2C->CR1 = 0; //~I2C_CR1_PE;
 			state_ = INI_00;
+			I2C->CR2 = 0;
+			Init();
 			set_tout_ms(0);
+			Led2::Toggle();
 		}
 
-		static bool Write(SlaveAddr_t slaveAddr, StopMode noStop, uint8_t numByteToWrite, uint8_t* dataBuffer)
+		static bool Write(SlaveAddr_t slaveAddr, StopMode noStop, const uint8_t numByteToWrite, const uint8_t* dataBuffer)
 		{
-			// check if communication on going
-			if (I2C->SR3 & I2C_SR3_BUSY)
-				return false;
-			// check if STATE MACHINE is in state INI_00
-			if (state_ != INI_00)
+			Uart::Puts("\r\nState: ");
+			Uart::Puts((uint8_t)state_);
+			Uart::Puts("\r\nBusy?: ");
+			Uart::Puts(IsBusy() ? "True" : "False");
+			Uart::Newline();
+			bool result = true;
+			if(state_ == NACK_10)
+				result = false;
+			// check if communication on going && if STATE MACHINE is in state INI_00
+			else if(!IsInitialState() || IsBusy())
 				return false;
 			// set ACK
 			I2C->CR2 |= I2C_CR2_ACK;
@@ -148,22 +169,33 @@ namespace n_i2c
 			noStop_ = noStop;
 			slaveAddr_ = slaveAddr;
 			numByte_ = numByteToWrite;
-			dataBuffer_  = dataBuffer;
+			dataBuffer_  = (uint8_t*)dataBuffer;
 			// set comunication Timeout
 			set_tout_ms(I2C_TOUT);
 			// generate Start
-			I2C->CR2 |= I2C_CR2_START;
 			state_ = SB_01;
-			return true;
+			I2C->CR2 |= I2C_CR2_START;
+			return result;
 		}
 
-		static bool Read(SlaveAddr_t slaveAddr, uint8_t numByteToRead, uint8_t* dataBuffer)
+		#pragma inline=forced
+		static bool IsBusy()
 		{
-			// check if communication on going
-			if (I2C->SR3 & I2C_SR3_BUSY)
-				return false;
-			// check if STATE MACHINE is in state INI_00
-			if (state_ != INI_00)
+			return I2C->SR3 & I2C_SR3_BUSY;
+		}
+		#pragma inline=forced
+		static bool IsInitialState()
+		{
+			return state_ == INI_00;
+		}
+
+		static bool Read(SlaveAddr_t slaveAddr, StopMode noStop, uint8_t numByteToRead, uint8_t* dataBuffer)
+		{
+			bool result = true;
+			if(state_ == NACK_10)
+				result = false;
+			// check if communication on going && if STATE MACHINE is in state INI_00
+			else if((IsBusy() && noStop == Stop) || !IsInitialState())
 				return false;
 			// set ACK
 			I2C->CR2 |= I2C_CR2_ACK;
@@ -172,7 +204,7 @@ namespace n_i2c
 			// setup I2C comm. in Read
 			direction_ = DirRead;
 			// copy parameters for interrupt routines
-			noStop_ = NoStop;
+			noStop_ = noStop;
 			slaveAddr_ = slaveAddr;
 			numByte_ = numByteToRead;
 			dataBuffer_  = dataBuffer;
@@ -182,7 +214,7 @@ namespace n_i2c
 			I2C->CR2 |= I2C_CR2_START;
 			state_ = SB_11;
 			I2C->ITR |= I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;  // re-enable interrupt
-			return true;
+			return result;
 		}
 
 		_Pragma(VECTOR_ID(I2C_SB_vector))
@@ -196,9 +228,13 @@ namespace n_i2c
 			/* Check for error in communication */
 			if (sr2 != 0)
 			{
+				Uart::Putch('<');
+				Uart::Puts(sr2, 16);
+				Uart::Putch('>');
 				ErrProc();
+				state_ = NACK_10;
+				return;
 			}
-
 			/* Start bit detected */
 			if(sr1 & I2C_SR1_SB)
 			{
