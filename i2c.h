@@ -18,13 +18,13 @@
 
 namespace Mcudrv
 {
-
-namespace n_i2c
+namespace I2cs
 {
 	enum
 	{
-		AddrLM75 = 0x48,
-		Addr24C = 0x50
+		BaseAddrLM75 = 0x48,
+		BaseAddr24C = 0x50,
+		BaseAddrBH1750 = 0x23
 	};
 	enum Mode
 	{
@@ -152,7 +152,7 @@ namespace n_i2c
 //			I2C->CR2 = 0;
 //			Init();
 			set_tout_ms(0);
-			Led2::Toggle();
+			Led1::Set();
 		}
 
 		static bool Write(SlaveAddr_t slaveAddr, StopMode noStop, const uint8_t numByteToWrite, const uint8_t* dataBuffer)
@@ -217,6 +217,7 @@ namespace n_i2c
 			if (sr2 != 0)
 			{
 				ErrProc();
+				Led2::Set();
 			}
 			/* Start bit detected */
 			if(sr1 & I2C_SR1_SB)
@@ -386,13 +387,14 @@ namespace n_i2c
 			if(TIM4_tout_)
 				if(--TIM4_tout_ == 0)
 				{
+					Led3::Set();
 					ErrProc();
 				}
 		}
 	};
 
 	template<Mode mode, AddrType addrType>
-	volatile i2c<mode, addrType>::States i2c<mode, addrType>::state_;
+	volatile typename i2c<mode, addrType>::States i2c<mode, addrType>::state_;
 
 	template<Mode mode, AddrType addrType>
 	volatile uint8_t i2c<mode, addrType>::err_state_;
@@ -404,7 +406,7 @@ namespace n_i2c
 	volatile uint8_t i2c<mode, addrType>::TIM4_tout_;
 
 	template<Mode mode, AddrType addrType>
-	i2c<mode, addrType>::Direction i2c<mode, addrType>::direction_;
+	typename i2c<mode, addrType>::Direction i2c<mode, addrType>::direction_;
 
 	template<Mode mode, AddrType addrType>
 	uint8_t i2c<mode, addrType>::numByte_;
@@ -413,7 +415,7 @@ namespace n_i2c
 	uint8_t* i2c<mode, addrType>::dataBuffer_;
 
 	template<Mode mode, AddrType addrType>
-	i2c<mode, addrType>::SlaveAddr_t i2c<mode, addrType>::slaveAddr_;
+	typename i2c<mode, addrType>::SlaveAddr_t i2c<mode, addrType>::slaveAddr_;
 
 	template<Mode mode, AddrType addrType>
 	StopMode i2c<mode, addrType>::noStop_;
