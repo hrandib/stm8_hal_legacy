@@ -270,7 +270,7 @@ namespace Uarts
 		template<typename T>
 		static bool Puts(T value, uint8_t base = 10)
 		{
-			uint8_t buf[10];
+			uint8_t buf[16];
 			return Puts(io::xtoa(value, buf, base));
 		}
 

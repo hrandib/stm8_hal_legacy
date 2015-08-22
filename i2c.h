@@ -13,18 +13,20 @@
 #include "gpio.h"
 #include "clock.h"
 #include "timers.h"
+#include "delay.h"
 
 //#define FAST_I2C_MODE
 
 namespace Mcudrv
 {
-namespace I2cs
+namespace Twis
 {
 	enum
 	{
 		BaseAddrLM75 = 0x48,
 		BaseAddr24C = 0x50,
-		BaseAddrBH1750 = 0x23
+		BaseAddrBH1750 = 0x23,
+		BaseAddrBMP180 = 0x77
 	};
 	enum Mode
 	{
@@ -41,9 +43,245 @@ namespace I2cs
 		Stop,
 		NoStop
 	};
+	enum AckState
+	{
+		NoAck, Ack
+	};
 
-	template<Mode mode = Standard, AddrType addrType = Addr7bit>
-	class i2c
+	template<Mode mode = Standard, typename Scl = Pe1, typename Sda = Pe2>
+	class SoftTwi
+	{
+	private:
+		static void Delay()
+		{
+			if(mode == Standard)
+				delay_us<3>();
+			else
+			{
+				__no_operation();
+				__no_operation();
+			}
+		}
+		#pragma inline=forced
+		static bool Release()
+		{
+			for(uint8_t scl = 0; scl < 10; ++scl)
+			{
+				Scl::Clear();
+				Delay();
+				Scl::Set();
+				Delay();
+				if(Sda::IsSet())
+				{
+					Stop();
+					return true;	//Sda released
+				}
+			}
+			return false;	// Line is still busy
+		}
+	protected:
+		#pragma inline=forced
+		static void Start()
+		{
+			Sda::Clear();
+			Delay();
+			Scl::Clear();
+			Delay();
+		}
+		#pragma inline=forced
+		static void Stop()
+		{
+			Scl::Clear();
+			Delay();
+			Sda::Clear();
+			Delay();
+			Scl::Set();
+			Delay();
+			Sda::Set();
+		}
+		static AckState WriteByte(uint8_t data)
+		{
+			AckState ack = Ack;
+			for(uint8_t i = 0; i < 8; ++i)
+			{
+				if((data & 0x80) == 0)
+					Sda::Clear();
+				else
+					Sda::Set();
+				Delay();
+				Scl::Set();
+				Delay();
+				Scl::Clear();
+				data <<= 1U;
+			}
+			Sda::Set();
+			Delay();
+			Scl::Set();
+			Delay();
+			if(Sda::IsSet())
+				ack = NoAck;
+			else
+				ack = Ack;
+			Scl::Clear();
+			return ack;
+		}
+		static uint8_t ReadByte(AckState ackstate = Ack)
+		{
+			uint8_t data = 0;
+			Sda::Set();
+			for(uint8_t i = 0; i < 8; ++i)
+			{
+				data = (data << 1U);
+				Scl::Set();
+				Delay();
+				if(Sda::IsSet()) data |= 0x01;
+				Scl::Clear();
+				Delay();
+			}
+			if(ackstate == Ack)
+				Sda::Clear();
+			else
+				Sda::Set();
+			Delay();
+			Scl::Set();
+			Delay();
+			Scl::Clear();
+			Delay();
+			Sda::Set();
+			return data;
+		}
+
+	public:
+		static bool Init()
+		{
+			if((uint8_t)Scl::port_id == (uint8_t)Sda::port_id)
+			{
+				Scl::Port::Set((uint8_t)Scl::mask | (uint8_t)Sda::mask);
+				Scl::Port::template SetConfig<(uint8_t)Scl::mask | (uint8_t)Sda::mask, GpioBase::Out_OpenDrain_fast>();
+			}
+			else
+			{
+				Scl::Set();
+				Scl::template SetConfig<GpioBase::Out_OpenDrain_fast>();
+				Sda::Set();
+				Sda::template SetConfig<GpioBase::Out_OpenDrain_fast>();
+			}
+			if(!Sda::IsSet())
+				return Release();			//Reset slave devices
+			return true;	//Bus Ready
+		}
+		#pragma inline=forced
+		static void Restart()
+		{
+			Sda::Set();
+			Delay();
+			Scl::Set();
+			Delay();
+		}
+		static AckState Write(uint8_t addr, uint8_t* buf, uint8_t length, bool noStop = false)
+		{
+			Start();
+			AckState state = WriteByte(addr << 1);
+			if(state == NoAck) goto End;
+			while(length--)
+			{
+				if(WriteByte(*buf++) == NoAck)
+					break;
+			}
+			if(!length) state = Ack;
+		End:
+			if(!noStop) Stop();
+			return state;
+		}
+		static AckState Write(const uint8_t *buf, uint8_t length, bool noStop = false) //length of data (except address)
+		{
+			return Write(*buf, buf + 1, length, noStop);
+		}
+		static AckState Write(uint8_t addr, uint8_t data, bool noStop = false)
+		{
+			Start();
+			AckState state = NoAck;
+			if(WriteByte(addr << 1U) == Ack && WriteByte(data) == Ack)
+				state = Ack;
+			if(!noStop) Stop();
+			return state;
+		}
+		static bool Read(uint8_t addr, uint8_t* buf, uint8_t length)
+		{
+			Start();
+			bool result = false;
+			if(WriteByte((addr << 1U) | 0x01))
+			{
+				while(--length)
+				{
+					*buf++ = ReadByte();
+				}
+				*buf = ReadByte(NoAck);
+				result = true;
+			}
+			Stop();
+			return result;
+		}
+	};
+
+	template<typename Twi = SoftTwi<> >
+	class Lm75
+	{
+	public:
+		enum { BaseAddr = 0x48 };
+		static int16_t Read(uint8_t devAddr = 0)
+		{
+			int16_t result;
+			Twi::Read(BaseAddr | devAddr, (uint8_t*)&result, 2);
+			return result / 128;
+		}
+	};
+
+	template<typename Twi = SoftTwi<> >
+	class Eeprom24c
+	{
+	public:
+		enum { BaseAddr = 0x50 };
+
+	};
+
+	template<typename Twi = SoftTwi<> >
+	class Bh1750
+	{
+	public:
+		enum { DevAddr = 0x23 };
+		enum
+		{
+			BhPowerDown,
+			BhPowerOn,
+			BhReset = 0x07
+		};
+		enum Mode
+		{
+			ContHres = 0x10,// 1lx res. typ. 120ms (max 180ms)
+			ContHres2,		// 0.5lx res. typ. 120ms
+			ContLres		// 4lx res. typ. 16ms (max 24ms)
+		};
+		static AckState Init(Mode mode = ContHres)
+		{
+			return AckState(Twi::Write(DevAddr, BhPowerOn) && Twi::Write(DevAddr, mode));
+		}
+		static void SetMode(Mode mode)
+		{
+			return Twi::Write(DevAddr, mode);
+		}
+
+		static uint16_t Read()
+		{
+			uint8_t buf[2];
+			if(!Twi::Read(DevAddr, buf, 2)) return 0;
+			return uint16_t(buf[0] << 8U) | buf[1];
+		}
+	};
+
+	//Based on hardware, is still buggy
+/*	template<Mode mode = Standard, AddrType addrType = Addr7bit>
+	class Twi
 	{
 	private:
 		enum { I2C_TOUT = 40 };
@@ -110,6 +348,8 @@ namespace I2cs
 			}
 //			I2C->OARL = 0xA0;              // own address A0;
 			I2C->OARH |= 0x40;
+			if(I2C->SR3 & I2C_SR3_BUSY)
+				ReleaseBus();			//Reset slave devices
 			I2C->ITR = I2C_ITR_ITERREN | I2C_ITR_ITEVTEN;	// enable Event & error interrupts
 			I2C->CR2 = I2C_CR2_ACK;		// ACK=1, Ack enable
 			I2C->CR1 = I2C_CR1_PE;			// PE=1
@@ -125,6 +365,29 @@ namespace I2cs
 			Timer4::EnableInterrupt();
 			Timer4::Init(Div_128, CEN);		//1ms interrupts
 		}
+
+		static void ReleaseBus()
+		{
+			typedef Pe1 Scl;
+			typedef Pe2 Sda;
+			for(uint8_t scl = 0; scl < 10; ++scl)
+			{
+				Scl::Clear();
+				delay_ms(1);
+				Scl::Set();
+				delay_ms(1);
+				if(Sda::IsSet()) break;
+			}
+			//Stop condition
+			Scl::Clear();
+			delay_ms(1);
+			Sda::Clear();
+			delay_ms(1);
+			Scl::Set();
+			delay_ms(1);
+			Sda::Set();
+		}
+
 		#pragma inline=forced
 		static bool IsBusy()
 		{
@@ -135,7 +398,6 @@ namespace I2cs
 		{
 			return state_ == INI_00;
 		}
-
 		static bool IsEnabled()
 		{
 			return I2C->CR1 & I2C_CR1_PE;
@@ -209,17 +471,17 @@ namespace I2cs
 		{
 			uint8_t sr1, sr2;
 			volatile uint8_t dummy;
-			/* Get Value of Status registers and Control register 2 */
+		//	Get Value of Status registers and Control register 2
 			sr1 = I2C->SR1;
 			sr2 = I2C->SR2;
 			dummy = I2C->CR2;
-			/* Check for error in communication */
+		//	Check for error in communication
 			if (sr2 != 0)
 			{
 				ErrProc();
 				Led2::Set();
 			}
-			/* Start bit detected */
+		//	Start bit detected
 			if(sr1 & I2C_SR1_SB)
 			{
 				switch(state_)
@@ -248,7 +510,7 @@ namespace I2cs
 					break;
 				}
 			}
-			/* ADD10*/
+		//	 ADD10
 			if (I2C->SR1 & I2C_SR1_ADD10) {
 				switch(state_)
 				{
@@ -260,7 +522,7 @@ namespace I2cs
 					break;
 				}
 			}
-			/* ADDR*/
+		//	ADDR
 			if (sr1 & I2C_SR1_ADDR)
 			{
 				switch (state_)
@@ -275,9 +537,9 @@ namespace I2cs
 					}
 					if (numByte_ == 2)
 					{
-						// set POS bit
+					// set POS bit
 						I2C->CR2 |= I2C_CR2_POS;
-						/* Clear Add Ack Flag */
+					//	Clear Add Ack Flag
 						dummy = I2C->SR3;
 						// set No ACK
 						I2C->CR2 &= ~I2C_CR2_ACK;
@@ -287,7 +549,7 @@ namespace I2cs
 					if (numByte_ == 1)
 					{
 						I2C->CR2 &= ~I2C_CR2_ACK;
-						/* Clear Add Ack Flag */
+				//	Clear Add Ack Flag
 						dummy = I2C->SR3;
 						I2C->CR2 |= I2C_CR2_STOP;
 						I2C->ITR |= I2C_ITR_ITBUFEN;
@@ -303,7 +565,7 @@ namespace I2cs
 					ErrProc();
 					break;
 				case ADDR_03 :
-					/* Clear Add Ack Flag */
+				// Clear Add Ack Flag
 					dummy = I2C->SR3;
 					I2C->DR = *dataBuffer_++;
 					numByte_--;
@@ -330,7 +592,7 @@ namespace I2cs
 				}
 				I2C->ITR &= ~I2C_ITR_ITBUFEN;  // Disable Buffer interrupts (errata)
 			}
-			/* BTF */
+		// BTF
 			if (sr1 & I2C_SR1_BTF)
 			{
 				switch (state_)
@@ -388,38 +650,45 @@ namespace I2cs
 				if(--TIM4_tout_ == 0)
 				{
 					Led3::Set();
+					I2C->CR1 = 0;
+					I2C->CR2 = I2C_CR2_SWRST;
+					__no_operation();
+					if(!Pe1::IsSet() || !Pe2::IsSet())
+						ReleaseBus();
+					I2C->CR2 = 0;
+					I2C->CR1 = I2C_CR1_PE;
 					ErrProc();
 				}
 		}
 	};
 
 	template<Mode mode, AddrType addrType>
-	volatile typename i2c<mode, addrType>::States i2c<mode, addrType>::state_;
+	volatile typename Twi<mode, addrType>::States Twi<mode, addrType>::state_;
 
 	template<Mode mode, AddrType addrType>
-	volatile uint8_t i2c<mode, addrType>::err_state_;
+	volatile uint8_t Twi<mode, addrType>::err_state_;
 
 	template<Mode mode, AddrType addrType>
-	volatile uint8_t i2c<mode, addrType>::err_save_;
+	volatile uint8_t Twi<mode, addrType>::err_save_;
 
 	template<Mode mode, AddrType addrType>
-	volatile uint8_t i2c<mode, addrType>::TIM4_tout_;
+	volatile uint8_t Twi<mode, addrType>::TIM4_tout_;
 
 	template<Mode mode, AddrType addrType>
-	typename i2c<mode, addrType>::Direction i2c<mode, addrType>::direction_;
+	typename Twi<mode, addrType>::Direction Twi<mode, addrType>::direction_;
 
 	template<Mode mode, AddrType addrType>
-	uint8_t i2c<mode, addrType>::numByte_;
+	uint8_t Twi<mode, addrType>::numByte_;
 
 	template<Mode mode, AddrType addrType>
-	uint8_t* i2c<mode, addrType>::dataBuffer_;
+	uint8_t* Twi<mode, addrType>::dataBuffer_;
 
 	template<Mode mode, AddrType addrType>
-	typename i2c<mode, addrType>::SlaveAddr_t i2c<mode, addrType>::slaveAddr_;
+	typename Twi<mode, addrType>::SlaveAddr_t Twi<mode, addrType>::slaveAddr_;
 
 	template<Mode mode, AddrType addrType>
-	StopMode i2c<mode, addrType>::noStop_;
-
+	StopMode Twi<mode, addrType>::noStop_;
+	*/
 
 
 }//i2c

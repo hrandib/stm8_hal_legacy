@@ -205,6 +205,7 @@
 #define     __I     volatile const   /*!< defines 'read only' permissions     */
 #define     __O     volatile         /*!< defines 'write only' permissions    */
 #define     __IO    volatile         /*!< defines 'read / write' permissions  */
+#define		nullptr 0
 
 /*!< Signed integer types  */
 typedef   signed char     int8_t;
@@ -225,6 +226,7 @@ typedef int8_t  s8;
 typedef uint32_t  u32;
 typedef uint16_t u16;
 typedef uint8_t  u8;
+
 
 
 //typedef enum {FALSE = 0, TRUE = !FALSE} bool;
