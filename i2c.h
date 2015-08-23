@@ -279,6 +279,138 @@ namespace Twis
 		}
 	};
 
+	template<typename Twi, uint8_t OversamplingFactor = 0>
+	class Bmp180
+	{
+		static_assert(OversamplingFactor < 4, "Oversampling Factor must be in range 0..3");
+	private:
+		enum
+		{
+			BaseAddr = 0x77,
+			Oss = OversamplingFactor,
+			PMeasureDelay = Oss == 1 ? 8 :
+							Oss == 2 ? 14 :
+							Oss == 3 ? 26 : 5
+		};
+		enum RegMap
+		{
+			RegAC1 = 0xAA,
+			RegTestID = 0xD0,
+			RegControl = 0xF4,
+			RegData = 0xF6,
+			RegXlsb = 0xF8
+		};
+		enum CalValues
+		{
+			AC1, AC2, AC3, AC4, AC5, AC6,
+			B1, B2,
+			MB, MC, MD
+		};
+		enum ControlValue
+		{
+			CmdTemperature = 0x2E,
+			CmdPressure = 0x34 | (Oss << 6),
+		};
+
+		static uint16_t calArr[11];
+
+		static AckState SetCommand(ControlValue ctrl)
+		{
+			uint8_t data[2] = { RegControl, ctrl };
+			return Twi::Write(BaseAddr, data, 2);
+		}
+		static uint16_t GetReg(RegMap reg)
+		{
+			using namespace Twis;
+			uint16_t result;
+			Twi::Write(BaseAddr, (uint8_t)reg, NoStop);
+			Twi::Restart();
+			Twi::Read(BaseAddr, (uint8_t*)&result, 2);
+			return result;
+		}
+		static void GetCalValues()
+		{
+			for(uint8_t x = 0; x < 11; ++x)
+			{
+				calArr[x] = GetReg(RegMap(RegAC1 + x * 2));
+			}
+		}
+
+	public:
+		static void Init()
+		{
+			GetCalValues();
+		}
+	/*	static void PrintCalArray()
+		{
+			const uint8_t* const names[] = {
+				"AC1", "AC2", "AC3", "AC4", "AC5", "AC6",
+				"B1", "B2",
+				"MB", "MC", "MD"
+			};
+
+			for(uint8_t i = 0; i < 11; ++i)
+			{
+				Uart::Puts(names[i]);
+				Uart::Puts(": ");
+				if(i < 3 || i > 5) Uart::Puts(int16_t(calArr[i]));
+				else Uart::Puts(calArr[i]);
+				Uart::Newline();
+			}
+		}
+	*/
+		static uint32_t GetPressure()
+		{
+			if(!SetCommand(CmdTemperature)) return 0;
+			delay_ms(5);
+			uint16_t rawvalueT = GetReg(RegData);
+			int32_t x1 = ((int32_t)rawvalueT - calArr[AC6]) * calArr[AC5] / (1U << 15);
+			int32_t x2 = (int32_t)((int16_t)calArr[MC]) * (1U << 11) / (x1 + calArr[MD]);
+			int32_t b5 = x1 + x2;
+
+			if(!SetCommand(CmdPressure)) return 0;
+			delay_ms(PMeasureDelay);
+			int32_t rawvalueP = GetReg(RegData);
+			if(Oss) rawvalueP = (rawvalueP << 8 | (GetReg(RegXlsb)) & 0xFF) >> (8 - Oss);
+			int32_t b6 = b5 - 4000;
+			x1 = ((int32_t)((int16_t)calArr[B2]) * (b6 * b6 / (1U << 12))) / (1U << 11);
+			x2 = (int32_t)((int16_t)calArr[AC2]) * b6 / (1U << 11);
+			int32_t x3 = x1 + x2;
+			int32_t b3 = ((((int32_t)((int16_t)calArr[AC1]) * 4 + x3) << Oss) + 2) / 4;
+			x1 = (int32_t)((int16_t)calArr[AC3]) * b6 / (1U << 13);
+			x2 = ((int32_t)((int16_t)calArr[B1]) * ((b6 * b6) / (1U << 12))) / (1UL << 16);
+			x3 = ((x1 + x2) + 2) / 4;
+			uint32_t b4 = (int32_t)calArr[AC4] * (x3 + 32768U) >> 15U;
+			uint32_t b7 = (rawvalueP - b3) * (50000U >> Oss);
+			uint32_t p;
+			if(b7 < 0x80000000UL)
+			{
+				p = (b7 * 2) / b4;
+			}
+			else
+			{
+				p = (b7 / b4) * 2;
+			}
+			x1 = (p >> 8) * (p >> 8);
+			x1 = (x1 * 3038) >> 16;
+			x2 = (-7357 * (int32_t)p) >> 16;
+			p = p + ((x1 + x2 + 3791) >> 4);
+			return p;
+		}
+		static int16_t GetTemperature()
+		{
+			SetCommand(CmdTemperature);
+			delay_ms(5);
+			uint16_t rawvalue = GetReg(RegData);
+			int32_t x1 = ((int32_t)rawvalue - calArr[AC6]) * calArr[AC5] / (1U << 15);
+			int32_t x2 = (int32_t)((int16_t)calArr[MC]) * (1U << 11) / (x1 + calArr[MD]);
+			return (x1 + x2 + 8) / (1U << 4);
+		}
+	};
+	template<typename Twi, uint8_t Oss>
+	uint16_t Bmp180<Twi, Oss>::calArr[11];
+
+
 	//Based on hardware, is still buggy
 /*	template<Mode mode = Standard, AddrType addrType = Addr7bit>
 	class Twi
