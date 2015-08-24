@@ -48,6 +48,7 @@ namespace Twis
 		NoAck, Ack
 	};
 
+	//Fast mode (400kHz) is only valid if Fcpu = 16 MHz
 	template<Mode mode = Standard, typename Scl = Pe1, typename Sda = Pe2>
 	class SoftTwi
 	{
@@ -178,7 +179,7 @@ namespace Twis
 			Scl::Set();
 			Delay();
 		}
-		static AckState Write(uint8_t addr, uint8_t* buf, uint8_t length, bool noStop = false)
+		static AckState Write(uint8_t addr, const uint8_t* buf, uint8_t length, bool noStop = false)
 		{
 			Start();
 			AckState state = WriteByte(addr << 1);
