@@ -61,7 +61,6 @@ namespace Mcudrv
 			Out_PushPull,
 			Out_PushPull_fast
 		};
-		enum DontCareConfiguration{ None };		
 	};
 
 	template <uint16_t baseaddr, uint8_t ID>
@@ -263,6 +262,7 @@ namespace Mcudrv
 			position = stdx::MaskToPosition<mask>::value,
 			port_id = Port::id
 		};
+		static const bool Exist = mask;
 		#pragma inline=forced
 		template <GpioBase::Cfg cfg>
 		static void SetConfig()
