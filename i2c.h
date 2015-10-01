@@ -315,7 +315,7 @@ namespace Twis
 
 		static uint16_t calArr[11];
 
-		static AckState SetCommand(ControlValue ctrl)
+		static AckState SendCommand(ControlValue ctrl)
 		{
 			uint8_t data[2] = { RegControl, ctrl };
 			return Twi::Write(BaseAddr, data, 2);
@@ -338,6 +338,11 @@ namespace Twis
 		}
 
 	public:
+		struct PT
+		{
+			uint32_t pressure;
+			int16_t temperature;
+		};
 		static void Init()
 		{
 			GetCalValues();
@@ -360,16 +365,17 @@ namespace Twis
 			}
 		}
 	*/
-		static uint32_t GetPressure()
+		static bool GetValues(PT& pt)
 		{
-			if(!SetCommand(CmdTemperature)) return 0;
+			if(!SendCommand(CmdTemperature)) return false;
 			delay_ms(5);
 			uint16_t rawvalueT = GetReg(RegData);
 			int32_t x1 = ((int32_t)rawvalueT - calArr[AC6]) * calArr[AC5] / (1U << 15);
 			int32_t x2 = (int32_t)((int16_t)calArr[MC]) * (1U << 11) / (x1 + calArr[MD]);
 			int32_t b5 = x1 + x2;
+			pt.temperature = (b5 + 8) / (1U << 4);
 
-			if(!SetCommand(CmdPressure)) return 0;
+			if(!SendCommand(CmdPressure)) return false;
 			delay_ms(PMeasureDelay);
 			int32_t rawvalueP = GetReg(RegData);
 			if(Oss) rawvalueP = (rawvalueP << 8 | (GetReg(RegXlsb)) & 0xFF) >> (8 - Oss);
@@ -396,17 +402,26 @@ namespace Twis
 			x1 = (x1 * 3038) >> 16;
 			x2 = (-7357 * (int32_t)p) >> 16;
 			p = p + ((x1 + x2 + 3791) >> 4);
-			return p;
+			pt.pressure = p;
+			return true;
 		}
+		static uint32_t GetPressure()
+		{
+			PT pt;
+			GetValues(pt);
+			return pt.pressure;
+		}
+
 		static int16_t GetTemperature()
 		{
-			SetCommand(CmdTemperature);
+			SendCommand(CmdTemperature);
 			delay_ms(5);
 			uint16_t rawvalue = GetReg(RegData);
 			int32_t x1 = ((int32_t)rawvalue - calArr[AC6]) * calArr[AC5] / (1U << 15);
 			int32_t x2 = (int32_t)((int16_t)calArr[MC]) * (1U << 11) / (x1 + calArr[MD]);
 			return (x1 + x2 + 8) / (1U << 4);
 		}
+
 	};
 	template<typename Twi, uint8_t Oss>
 	uint16_t Bmp180<Twi, Oss>::calArr[11];
