@@ -1,11 +1,9 @@
 #pragma once
 #include "stm8s.h"
+#include "clock.h"
 #include "gpio.h"
-#include "cstring"
 #include "circularBuffer.h"
 #include "string_utils.h"
-
-
 
 namespace Mcudrv
 {
