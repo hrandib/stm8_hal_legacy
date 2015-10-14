@@ -52,21 +52,20 @@ private:
 		uint8_t  searchDirection = 0;
 		Crc::Crc8 crc;
 		uint8_t* prevRom = (uint8_t*)romArr;
-		uint8_t romIndex = 0;
-		for(; romIndex < romsMaxNumber; ++romIndex)
+		for(uint8_t romIndex = 0; romIndex < romsMaxNumber; ++romIndex)
 		{
 		// initialize for search
 			uint8_t* const rom = &romArr[romIndex][0]; //8 byte buffer for current search
+			uint8_t lastZero = 0;
 			bitIndex = 1;	//Current bit search, start at 1, end at 64 (for convenience)
 			byteIndex = 0; //Current byte search in
 			byteMask = 1;
 			crc.Reset();
 			if(!Reset())
 			{
-				return 0;
+				return 0; // No devices
 			}
 			Write(CmdSearchRom);
-			bool lastDevice = true;
 			do
 			{
 				// read a bit and its complement
@@ -74,8 +73,8 @@ private:
 				idBitComp = ReadBit();
 				// check for no devices on 1-wire
 				if(idBit && idBitComp)
-					return 0;
-				// all devices coupled have 0 or 1
+					return 0;	//All devices detached during search
+				// All devices coupled have 0 or 1
 				if(idBit != idBitComp)
 					searchDirection = idBit;  // bit write value for search
 				else	//collision here
@@ -88,8 +87,7 @@ private:
 						searchDirection = (bitIndex == lastCollision);
 					if(!searchDirection)
 					{
-						lastCollision = bitIndex;
-						lastDevice = false;
+						lastZero = bitIndex;
 					}
 				}
 
@@ -111,15 +109,30 @@ private:
 				}
 			} while(byteIndex < 8);  // loop until through all ROM bytes 0-7
 		// if the search was successful then
-			if(bitIndex == 65 && !crc.Get() && lastDevice)
+			if(bitIndex == 65)
 			{
-				return romIndex + 1;
+				if(crc.Get()) rom[0] |= 0x80;	//FamilyID MSB is correct crc flag
+				if(!(lastCollision = lastZero))
+				{
+					return romIndex + 1;
+				}
 			}
 			prevRom = rom;
 		}
 		return romsMaxNumber;
 	}
 public:
+	union Descriptor
+	{
+		struct
+		{
+			uint8_t family;
+			uint8_t id[6];
+			uint8_t crc;
+		};
+		uint8_t data[8];
+	};
+
 	static void Init()
 	{
 		OwPin::Set();
@@ -177,16 +190,24 @@ public:
 	{
 		Write(CmdSkipRom);
 	}
-	static void MatchRom(const uint8_t* rom)
+	static void MatchRom(const uint8_t* const rom)
 	{
 		Write(CmdMatchRom);
 		Write(rom, 8);
 	}
-	 /*Input - Empty array[x][8] will be filled with roms of devices found, Capacity of array (x)
+	static void MatchRom(const Descriptor* const desc)
+	{
+		MatchRom(desc->data);
+	}
+	 /*Input - Empty array[x][8] will be filled with roms of devices found
 	 Output - number of roms found*/
 	static uint8_t Search(uint8_t romArr[][8], const uint8_t romsMaxNumber)
 	{
 		return Search(romArr, romsMaxNumber, false);
+	}
+	static uint8_t Search(Descriptor* desc, const uint8_t romsMaxNumber)
+	{
+		return Search(*(uint8_t(*)[][8])desc, romsMaxNumber, false);
 	}
 
 	/*Verify the device with the ROM number in rom buffer is present.
@@ -206,17 +227,82 @@ public:
 		}
 		return result;
 	}
+	static bool Verify(const Descriptor* const romToCheck)
+	{
+		return Verify((const uint8_t*)romToCheck);
+	}
 
 };
 template<typename Ow, uint8_t devMaxNumber>
 class Ds18b20
 {
 private:
-	static uint8_t romArr[devMaxNumber][8];
+	typedef typename Ow::Descriptor Descriptor;
+	static Descriptor romArr[devMaxNumber];
 	static uint8_t devNumber;
+	enum InstuctionSet
+	{
+		CmdConvert = 0x44,
+		CmdRead = 0xBE
+	};
 public:
+	static uint8_t Init()
+	{
+		devNumber = Ow::Search(romArr, devMaxNumber);
+		return devNumber;
+	}
+
+	static void Convert()
+	{
+		if(Ow::Reset())
+		{
+			Ow::SkipRom();
+			Ow::Write(CmdConvert);
+		}
+	}
+	static uint16_t Get(uint8_t index)
+	{
+		if(Ow::Reset())
+		{
+			Ow::MatchRom(romArr[index]);
+			Ow::Write(CmdRead);
+			return Ow::Read() | Ow::Read() << 8;
+		}
+		else return 0xFFFF;
+	}
+	static uint16_t* Get(uint16_t* valArray)
+	{
+		for(uint8_t i = 0; i < devMaxNumber; ++i)
+		{
+			valArray[i] = Get(i);
+		}
+		return valArray;
+	}
+	static Descriptor* GetId(uint8_t index)
+	{
+		return *romArr[index];
+	}
 
 };
+
+//Helpers
+template<typename Ostream>
+void PrintOwID(const uint8_t roms[][8], uint8_t devNumber)
+{
+	for(uint8_t devn = 0; devn < devNumber; ++devn)
+	{
+		Ostream::Puts("Dev#");
+		Ostream::Puts(devn);
+		Ostream::Puts(" Family:");
+		Ostream::Puts((uint8_t)roms[devn][0], 16);
+		Ostream::Puts(" ID:");
+		for(uint8_t i = 6; i; --i)
+			Ostream::Puts((uint8_t)roms[devn][i], 16);
+		Ostream::Puts(" CRC:");
+		Ostream::Puts((uint8_t)roms[devn][7], 16);
+		Ostream::Newline();
+	}
+}
 
 
 }//Mcudrv
