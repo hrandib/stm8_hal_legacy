@@ -19,7 +19,8 @@ private:
 		CmdMatchRom = 0x55,
 		CmdSkipRom = 0xCC
 	};
-	#pragma inline=forced
+
+	#pragma optimize=speed
 	static void WriteBit(bool val)
 	{
 		disableInterrupts();
@@ -31,7 +32,7 @@ private:
 		if(val) delay_us<55>();
 		else delay_us<5>();
 	}
-	#pragma inline=forced
+	#pragma optimize=speed
 	static bool ReadBit()
 	{
 		disableInterrupts();
@@ -73,7 +74,9 @@ private:
 				idBitComp = ReadBit();
 				// check for no devices on 1-wire
 				if(idBit && idBitComp)
-					return 0;	//All devices detached during search
+				{
+					return 0;
+				}
 				// All devices coupled have 0 or 1
 				if(idBit != idBitComp)
 					searchDirection = idBit;  // bit write value for search
@@ -138,6 +141,8 @@ public:
 		OwPin::Set();
 		OwPin::template SetConfig<GpioBase::Out_OpenDrain_fast>();
 	}
+	//return true if presence exist
+	#pragma optimize=speed
 	static bool Reset()
 	{
 		OwPin::Clear();
@@ -181,23 +186,22 @@ public:
 		}
 		return buf;
 	}
-	static void Select(const uint8_t rom[8])
-	{
-		Write(CmdMatchRom);
-		Write(rom, 8);
-	}
 	static void SkipRom()
 	{
 		Write(CmdSkipRom);
+	}
+	static void Select(const Descriptor& desc)
+	{
+		MatchRom(desc.data);
 	}
 	static void MatchRom(const uint8_t* const rom)
 	{
 		Write(CmdMatchRom);
 		Write(rom, 8);
 	}
-	static void MatchRom(const Descriptor* const desc)
+	static void MatchRom(const Descriptor& desc)
 	{
-		MatchRom(desc->data);
+		MatchRom(desc.data);
 	}
 	 /*Input - Empty array[x][8] will be filled with roms of devices found
 	 Output - number of roms found*/
@@ -227,9 +231,32 @@ public:
 		}
 		return result;
 	}
-	static bool Verify(const Descriptor* const romToCheck)
+	static bool Verify(const Descriptor& romToCheck)
 	{
-		return Verify((const uint8_t*)romToCheck);
+		return Verify(romToCheck.data);
+	}
+
+	template<typename Ostream>
+	static void PrintID(const uint8_t roms[][8], uint8_t devNumber)
+	{
+		for(uint8_t devn = 0; devn < devNumber; ++devn)
+		{
+			Ostream::Puts("Dev#");
+			Ostream::Puts(devn);
+			Ostream::Puts(" Family:");
+			Ostream::Puts((uint8_t)roms[devn][0], 16);
+			Ostream::Puts(" ID:");
+			for(uint8_t i = 6; i; --i)
+				Ostream::Puts((uint8_t)roms[devn][i], 16);
+			Ostream::Puts(" CRC:");
+			Ostream::Puts((uint8_t)roms[devn][7], 16);
+			Ostream::Newline();
+		}
+	}
+	template<typename Ostream>
+	static void PrintID(const Descriptor* const desc, uint8_t devNumber)
+	{
+		PrintID<Ostream>(*(const uint8_t(*)[][8])desc, devNumber);
 	}
 
 };
@@ -251,14 +278,15 @@ public:
 		devNumber = Ow::Search(romArr, devMaxNumber);
 		return devNumber;
 	}
-
-	static void Convert()
+	static bool Convert()
 	{
 		if(Ow::Reset())
 		{
 			Ow::SkipRom();
 			Ow::Write(CmdConvert);
+			return true;
 		}
+		else return false;
 	}
 	static uint16_t Get(uint8_t index)
 	{
@@ -282,28 +310,20 @@ public:
 	{
 		return *romArr[index];
 	}
-
-};
-
-//Helpers
-template<typename Ostream>
-void PrintOwID(const uint8_t roms[][8], uint8_t devNumber)
-{
-	for(uint8_t devn = 0; devn < devNumber; ++devn)
+	template<typename Ostream>
+	static void PrintID()
 	{
-		Ostream::Puts("Dev#");
-		Ostream::Puts(devn);
-		Ostream::Puts(" Family:");
-		Ostream::Puts((uint8_t)roms[devn][0], 16);
-		Ostream::Puts(" ID:");
-		for(uint8_t i = 6; i; --i)
-			Ostream::Puts((uint8_t)roms[devn][i], 16);
-		Ostream::Puts(" CRC:");
-		Ostream::Puts((uint8_t)roms[devn][7], 16);
-		Ostream::Newline();
+		Ow::template PrintID<Ostream>(romArr, devNumber);
 	}
-}
-
+	static uint8_t GetSize()
+	{
+		return devNumber;
+	}
+};
+template<typename Ow, uint8_t devMaxNumber>
+typename Ds18b20<Ow, devMaxNumber>::Descriptor Ds18b20<Ow, devMaxNumber>::romArr[devMaxNumber];
+template<typename Ow, uint8_t devMaxNumber>
+uint8_t Ds18b20<Ow, devMaxNumber>::devNumber;
 
 }//Mcudrv
 
