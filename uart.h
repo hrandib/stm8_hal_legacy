@@ -2,6 +2,7 @@
 #include "stm8s.h"
 #include "clock.h"
 #include "gpio.h"
+#include "timers.h"
 #include "circularBuffer.h"
 #include "string_utils.h"
 
@@ -305,7 +306,7 @@ namespace Uarts
 #elif defined (STM8S105)
 			_Pragma(VECTOR_ID(UART2_T_TXE_vector))
 #endif
-		__interrupt static void TxIRQ()
+		__interrupt static void TxISR()
 		{
 			if (IsEvent(EvTxComplete))
 			{
@@ -328,7 +329,7 @@ namespace Uarts
 #elif defined (STM8S105)
 			_Pragma(VECTOR_ID(UART2_R_RXNE_vector))
 #endif
-			__interrupt static void RxIRQ()
+			__interrupt static void RxISR()
 		{
 //			bool error = IsEvent(Events(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
 			uint8_t c = Regs()->DR;
@@ -346,6 +347,67 @@ namespace Uarts
 	template<uint16_t TxBufSize, uint16_t RxBufSize, typename DEpin>
 	CircularBuffer<RxBufSize> UartIrq<TxBufSize, RxBufSize, DEpin>::rxbuf_;
 
+/*	Template for software UART implementation
+ *
+	template<typename TxPin,
+			 typename RxPin = Nullpin,
+			 uint16_t TxBufSize = 32,
+			 uint16_t RxBufSize = TxBufSize>
+	class SoftUart
+	{
+	private:
+		static CircularBuffer<TxBufSize> txbuf_;
+		static CircularBuffer<RxBufSize> rxbuf_;
+
+	public:
+		template<uint32_t Baudrate>
+		struct Divider
+		{
+			static const uint16_t Value = (uint16_t)(F_CPU / (3.0 * Baudrate) + 0.5);
+		};
+
+		static void Init()
+		{
+
+		}
+		#pragma inline=forced
+		static void ISR()
+		{
+
+		}
+		static bool Putch(const uint8_t c)
+		{
+			bool st = txbuf_.Write(c);
+//			EnableInterrupt(IrqTxEmpty);
+			return st;
+		}
+		static bool Puts(const uint8_t* s)
+		{
+			while(*s)
+			{
+				if(!txbuf_.Write(*s++)) return false;
+			}
+//			EnableInterrupt(IrqTxEmpty);
+			return true;
+		}
+		static bool Puts(const char* s)
+		{
+			return Puts((const uint8_t*)s);
+		}
+		template<typename T>
+		static bool Puts(T value, uint8_t base = 10)
+		{
+			uint8_t buf[16];
+			return Puts(io::xtoa(value, buf, base));
+		}
+
+	};
+
+	template<typename TxPin, typename RxPin, uint16_t TxBufSize, uint16_t RxBufSize>
+	CircularBuffer<TxBufSize> SoftUart<TxPin, RxPin, TxBufSize, RxBufSize>::txbuf_;
+	template<typename TxPin, typename RxPin, uint16_t TxBufSize, uint16_t RxBufSize>
+	CircularBuffer<RxBufSize> SoftUart<TxPin, RxPin, TxBufSize, RxBufSize>::rxbuf_;
+*/
 
 }//Uarts
 }//Mcudrv

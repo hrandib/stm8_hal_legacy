@@ -7,13 +7,12 @@
 #include "uart.h"
 #include "flash.h"
 #include "itc.h"
-
-#ifndef DEPIN
-#define DEPIN Mcudrv::Nullpin
-#endif
+#include "crc.h"
+#include "gpio.h"
 
 #define INSTRUCTION_SET_VERSION 2
 #define WAKEDATABUFSIZE 64
+uint8_t debugVal;
 
 namespace Mcudrv
 {
@@ -58,8 +57,8 @@ namespace Mcudrv
 			static void Init()
 			{
 				using namespace T4;
-				Itc::SetPriority(TIM4_OVR_UIF_vector, Itc::prioLevel_2);
-				Timer4::Init(Div128, CEN);
+				Itc::SetPriority(TIM4_OVR_UIF_vector, Itc::prioLevel_2_middle);
+				Timer4::Init(Div_128, CEN);
 		//		Timer4::EnableInterrupt();
 			}
 			#pragma inline=forced
@@ -278,45 +277,37 @@ namespace Mcudrv
 			{
 				uint8_t addr;
 				uint8_t cmd;
-				uint8_t dsize;
+				uint8_t n;
 				uint8_t buf[WAKEDATABUFSIZE];
-				uint8_t crc;
 			};
 			static volatile Packet pdata;
-			static uint8_t cmd;
+			static volatile uint8_t cmd;
 		};
 		volatile WakeData::Packet WakeData::pdata;
-		uint8_t WakeData::cmd;
+		volatile uint8_t WakeData::cmd;
 
 		template<typename moduleList = ModuleList<NullModule>,
 				 Uarts::BaudRate baud = 9600UL,
-				 typename DEpin = DEPIN,
+				 typename ControlPin = Nullpin,
 				 Mode mode = Slave>	//TODO: Master mode
 		class Wake : WakeData
 		{
 		private:
-			typedef Uarts::Uart<> Uart;
-			typedef Uarts::Internal::UartTraits<DEpin> ControlPin;
-			enum { SingleWireMode = Uart::BaseAddr == UART1_BaseAddress ? Uarts::SingleWireMode : 0 };
-
-			static void Crc8(uint8_t b) //TODO: Table computation
-			{
-				for(char i = 0; i < 8; b = b >> 1, i++)
-					if((b ^ pdata.crc) & 1) pdata.crc = ((pdata.crc ^ 0x18) >> 1) | 0x80;
-					else pdata.crc = (pdata.crc >> 1) & ~0x80;
-			}
+			typedef Uarts::Uart Uart;
+			enum { SingleWireMode = (Uart::BaseAddr == UART1_BaseAddress ? Uarts::SingleWireMode : 0) };
 			#pragma location=".eeprom.data"
 			static uint8_t nodeAddr_nv;// @ ".eeprom.data";
 			#pragma location=".eeprom.data"
 			static uint8_t groupAddr_nv;// @ ".eeprom.data";
-			static uint8_t prev_byte;
-			static State state;				//Current tranfer mode
-			static uint8_t ptr;				//data pointer in Rx buffer
-			static bool activity;			//Transaction activity flag
+			static volatile uint8_t prev_byte;
+			static volatile State state;				//Current tranfer mode
+			static volatile uint8_t ptr;				//data pointer in Rx buffer
+			static volatile bool activity;			//Transaction activity flag
+			static Crc::Crc8 crc;
 
 			static void SetAddress(const AddrType nodeOrGroup)
 			{
-				if(pdata.dsize == 2 && pdata.addr)
+				if(pdata.n == 2 && pdata.addr)
 				{
 					if(nodeOrGroup ? CheckNodeAddress() : CheckGroupAddress())
 					{
@@ -363,12 +354,13 @@ namespace Mcudrv
 			{
 				using namespace Uarts;
 		//Single Wire mode is default for UART1
-				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), 4800UL>();
-				ControlPin::SetConfig();
+				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), 9600UL>();
+				ControlPin::template SetConfig<GpioBase::Out_PushPull_fast>();
 //				moduleList::Init();
 //				OpTime::Init();
 //				Wdg::Iwdg::Enable(Wdg::P_1s);
-				Uart::EnableInterrupt(DefaultInts);
+				Uart::EnableInterrupt(IrqDefault);
+
 			}
 
 			#pragma inline=forced
@@ -381,7 +373,9 @@ namespace Mcudrv
 //					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
 //				}
 //				Wdg::Iwdg::Refresh();
-/*				switch(cmd)
+				if(cmd)
+				{
+				switch(cmd)
 				{
 					case C_NOP:
 						break;
@@ -391,16 +385,17 @@ namespace Mcudrv
 					}
 						break;
 					case C_ECHO:
+					Led2::Toggle();
 						break;
 					case C_GETINFO:
 					{
-						if (!pdata.dsize)	//Common device info
+						if (!pdata.n)	//Common device info
 						{
 							pdata.buf[0] = moduleList::deviceMask;
 							pdata.buf[1] = INSTRUCTION_SET_VERSION;
-							pdata.dsize = 2;
+							pdata.n = 2;
 						}
-						else if (pdata.dsize == 1)	//Info for each logical device
+						else if (pdata.n == 1)	//Info for each logical device
 						{
 							if(pdata.buf[0] < 7)
 							{
@@ -420,7 +415,7 @@ namespace Mcudrv
 						else
 						{
 							pdata.buf[0] = ERR_PA;
-							pdata.dsize = 1;
+							pdata.n = 1;
 							break;
 						}
 					}
@@ -431,33 +426,33 @@ namespace Mcudrv
 						break;
 					case C_SAVESETTINGS:
 					{
-						if(!pdata.dsize)
+						if(!pdata.n)
 						{
 							moduleList::SaveState();
 							pdata.buf[0] = ERR_NO;
 						}
 						else pdata.buf[0] = ERR_PA;
-						pdata.dsize = 1;
+						pdata.n = 1;
 					}
 						break;
 					case C_GETOPTIME:
 					{
-						if (!pdata.dsize)
+						if (!pdata.n)
 						{
 							pdata.buf[0] = Wk::ERR_NO;
 							OpTime::Get(&pdata.buf[1]);
-							pdata.dsize = 4;
+							pdata.n = 4;
 						}
 						else
 						{
 							pdata.buf[0] = Wk::ERR_PA;
-							pdata.dsize = 1;
+							pdata.n = 1;
 						}
 					}
 						break;
 					case C_OFF:
 					{
-						if (!pdata.dsize)
+						if (!pdata.n)
 						{
 							pdata.buf[0] = Wk::ERR_NO;
 							moduleList::Off();
@@ -466,12 +461,12 @@ namespace Mcudrv
 						{
 							pdata.buf[0] = Wk::ERR_PA;
 						}
-						pdata.dsize = 1;
+						pdata.n = 1;
 					}
 						break;
 					case C_ON:
 					{
-						if (!pdata.dsize)
+						if (!pdata.n)
 						{
 							pdata.buf[0] = Wk::ERR_NO;
 							moduleList::On();
@@ -480,17 +475,17 @@ namespace Mcudrv
 						{
 							pdata.buf[0] = Wk::ERR_PA;
 						}
-						pdata.dsize = 1;
+						pdata.n = 1;
 					}
 						break;
 					default: moduleList::Process();
 				}
-*/				if (cmd != C_NOP)// && pdata.addr == nodeAddr_nv)
-				{
-					Yellow::Toggle();
-					Send();
+					if(pdata.addr == nodeAddr_nv)
+					{
+						Send();
+					}
+					cmd = Wk::C_NOP;
 				}
-				cmd = Wk::C_NOP;
 			}
 
 			#pragma inline=forced
@@ -502,15 +497,15 @@ namespace Mcudrv
 			static void Send()
 			{
 				using namespace Uarts;
-				ControlPin::Set(); //переключение RS-485 на передачу
+				ControlPin::Set(); //Switch to TX
 				char data_byte = FEND;
-				pdata.crc = CRC_INIT;           //инициализация CRC,
-				Crc8(data_byte);		//обновление CRC
+				crc.Reset(CRC_INIT); //инициализация CRC,
+				crc(data_byte);		//обновление CRC
 				Uart::Regs()->DR = data_byte;
 				state = ADDR;
 				prev_byte = TFEND;
-				Uart::EnableInterrupt(TxEmptyInt);
-				Uart::DisableInterrupt(RxneInt);
+				Uart::EnableInterrupt(IrqTxEmpty);
+				Uart::DisableInterrupt(IrqRxne);
 			}
 
 #if defined (STM8S103) || defined (STM8S003)
@@ -518,18 +513,18 @@ namespace Mcudrv
 #elif defined (STM8S105)
 			_Pragma(VECTOR_ID(UART2_T_TXE_vector))
 #endif
-			__interrupt static void TxIRQ()
+			__interrupt static void TxISR()
 			{
 				using namespace Uarts;
-				if (Uart::IsEvent(TxComplete))
+				if(Uart::IsEvent(EvTxComplete))
 				{
-					Uart::ClearEvent(TxComplete);
-					Uart::ClearEvent(Rxne);
-					Uart::EnableInterrupt(RxneInt);
-					ControlPin::Clear();		//переключение RS-485 на прием
+					Uart::ClearEvent(EvTxComplete);
+					Uart::ClearEvent(EvRxne);
+					Uart::EnableInterrupt(IrqRxne);
+					ControlPin::Clear();		//Switch to RX
 					activity = false;
 				}
-				else //if (Uart::template IsEvent<Uarts::TxEmpty>())
+				else //if (Uart::IsEvent(Uarts::TxEmpty))
 				{
 					char data_byte;
 					if(prev_byte == FEND)               //если производится стаффинг,
@@ -567,18 +562,19 @@ namespace Mcudrv
 						}
 					case NBT:                      //-----> передача количества байт
 						{
-							data_byte = pdata.dsize;
+							data_byte = pdata.n;
 							state = DATA;
 							ptr = 0;                  //обнуление указателя данных для передачи
 							break;
 						}
 					case DATA:                     //-----> передача данных
 						{
-							if(ptr < pdata.dsize)
+							uint8_t ptr_ = ptr;
+							if(ptr_ < pdata.n)
 								data_byte = pdata.buf[ptr++];
 							else
 							{
-								data_byte = pdata.crc;        //передача CRC
+								data_byte = crc.Get();        //передача CRC
 								state = CRC;
 							}
 							break;
@@ -586,10 +582,11 @@ namespace Mcudrv
 					default:
 						{
 							state = SEND_IDLE;          //передача пакета завершена
-							Uart::DisableInterrupt(TxEmptyInt);
+							Uart::DisableInterrupt(IrqTxEmpty);
+							return;
 						}
 					}
-					Crc8(data_byte);     //обновление CRC
+					crc(data_byte);     //обновление CRC
 					if (state == CMD)			//Метка адреса
 						data_byte |= 0x80;
 					prev_byte = data_byte;              //сохранение пре-байта
@@ -604,27 +601,27 @@ namespace Mcudrv
 #elif defined (STM8S105)
 			_Pragma(VECTOR_ID(UART2_R_RXNE_vector))
 #endif
-			__interrupt static void RxIRQ()
+			__interrupt static void RxISR()
 			{
 				using namespace Uarts;
-				bool error = Uart::IsEvent(static_cast<Events>(ParityErr | FrameErr | NoiseErr | OverrunErr)); //чтение флагов ошибок
+				bool error = Uart::IsEvent(static_cast<Events>(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
 				uint8_t data_byte = Uart::Regs()->DR;              //чтение данных
 
-				if(error)     //если обнаружены ошибки при приеме байта
+				if(error)					//если обнаружены ошибки при приеме байта
 				{	
-					state = WAIT_FEND;            //ожидание нового пакета
-					cmd = C_ERR;                //рапортуем об ошибке
+					state = WAIT_FEND;		//ожидание нового пакета
+					cmd = C_ERR;			//рапортуем об ошибке
 					return;
 				}
 
-				if(data_byte == FEND)               //если обнаружено начало фрейма,
+				if(data_byte == FEND)		//если обнаружено начало фрейма,
 				{
-					prev_byte = data_byte;          //то сохранение пре-байта,
-					pdata.crc = CRC_INIT;           //инициализация CRC,
-					state = ADDR;					//сброс указателя данных,
-					Crc8(data_byte);	//обновление CRC,
+					prev_byte = data_byte;	//то сохранение пре-байта,
+					crc.Reset(CRC_INIT);	//инициализация CRC,
+					state = ADDR;			//сброс указателя данных,
+					crc(data_byte);			//обновление CRC,
 					activity = true;
-					return;                         //выход
+					return;
 				}
 
 				if(state == WAIT_FEND)          //-----> если ожидание FEND,
@@ -663,7 +660,7 @@ namespace Mcudrv
 							data_byte = data_byte & 0x7F; //обнуляем бит 7, получаем истинный адрес
 							if(data_byte == 0 || data_byte == nodeAddr_nv || data_byte == groupAddr_nv) //если нулевой или верный адрес,
 							{
-								Crc8(data_byte); //то обновление CRC и
+								crc(data_byte); //то обновление CRC и
 								pdata.addr = data_byte;
 								state = CMD;       //переходим к приему команды
 								break;
@@ -683,7 +680,7 @@ namespace Mcudrv
 							break;
 						}
 						pdata.cmd = data_byte;          //сохранение команды
-						Crc8(data_byte); //обновление CRC
+						crc(data_byte); //обновление CRC
 						state = NBT;           //переходим к приему количества байт
 						break;
 					}
@@ -691,32 +688,33 @@ namespace Mcudrv
 					{
 						if(data_byte >= WAKEDATABUFSIZE)           //если количество байт > bufsize,
 						{
-							state = WAIT_FEND;
-							cmd = C_ERR;//TODO:Флаг ошибки переполнения буфера  //то ошибка
+							state = WAIT_FEND;	//TODO:Флаг ошибки переполнения буфера
+							cmd = C_ERR;		//то ошибка
 							break;
 						}
-						pdata.dsize = data_byte;
-						Crc8(data_byte); //обновление CRC
-						ptr = 0;                  //обнуляем указатель данных
-						state = DATA;          //переходим к приему данных
+						pdata.n = data_byte;
+						crc(data_byte);		//обновление CRC
+						ptr = 0;			//обнуляем указатель данных
+						state = DATA;		//переходим к приему данных
 						break;
 					}
 				case DATA:                     //-----> ожидание приема данных
 					{
-						if(ptr < pdata.dsize)       //если не все данные приняты,
+						uint8_t ptr_ = ptr;
+						if(ptr_ < pdata.n)       //если не все данные приняты,
 						{
 							pdata.buf[ptr++] = data_byte; //то сохранение байта данных,
-							Crc8(data_byte);  //обновление CRC
+							crc(data_byte);  //обновление CRC
 							break;
 						}
-						if(data_byte != pdata.crc)      //если приняты все данные, то проверка CRC
+						if(data_byte != crc.Get())      //если приняты все данные, то проверка CRC
 						{
-							state = WAIT_FEND;        //если CRC не совпадает,
-							cmd = C_ERR;//TODO:Флаг ошибки CRC           //то ошибка
+							state = WAIT_FEND;		//если CRC не совпадает,
+							cmd = C_ERR;			//то ошибка
 							break;
 						}
-						state = WAIT_FEND;          //прием пакета завершен,
-						cmd = pdata.cmd;            //загрузка команды на выполнение
+						state = WAIT_FEND;		//прием пакета завершен,
+						cmd = pdata.cmd;		//загрузка команды на выполнение
 						break;
 					}
 				}
@@ -737,21 +735,26 @@ namespace Mcudrv
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<moduleList, baud, DEpin, mode>::prev_byte;
+		volatile uint8_t Wake<moduleList, baud, DEpin, mode>::prev_byte;
 		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		State Wake<moduleList, baud, DEpin, mode>::state;
+		volatile State Wake<moduleList, baud, DEpin, mode>::state;
 		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<moduleList, baud, DEpin, mode>::ptr;
+		volatile uint8_t Wake<moduleList, baud, DEpin, mode>::ptr;
 		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		bool Wake<moduleList, baud, DEpin, mode>::activity;
+		volatile bool Wake<moduleList, baud, DEpin, mode>::activity;
+		template<typename moduleList,
+				 Uarts::BaudRate baud,
+				 typename DEpin,
+				 Mode mode>
+		Crc::Crc8 Wake<moduleList, baud, DEpin, mode>::crc;
 	}
 }

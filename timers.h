@@ -4,8 +4,20 @@
 
 namespace Mcudrv
 {
+	namespace Timers
+	{
+		enum Channel
+		{
+			Ch1,
+			Ch2,
+			Ch3,
+			Ch4,
+			All_Ch
+		};
+	}
 	namespace T1
 	{
+		using namespace Timers;
 		typedef uint16_t Div;
 //TODO: Implement TIM1_SR2
 		enum Cfg
@@ -77,32 +89,23 @@ namespace Mcudrv
 
 		enum Ints
 		{
-			UpdInt = TIM1_IER_UIE,
-			Ch1Int = TIM1_IER_CC1IE,
-			Ch2Int = TIM1_IER_CC2IE,
-			Ch3Int = TIM1_IER_CC3IE,
-			Ch4Int = TIM1_IER_CC4IE,
-			ComInt = TIM1_IER_COMIE,
-			TrigInt = TIM1_IER_TIE,			
-			BreakInt = TIM1_IER_BIE
+			IRQ_Update = TIM1_IER_UIE,
+			IRQ_Ch1 = TIM1_IER_CC1IE,
+			IRQ_Ch2 = TIM1_IER_CC2IE,
+			IRQ_Ch3 = TIM1_IER_CC3IE,
+			IRQ_Ch4 = TIM1_IER_CC4IE,
+			IRQ_Com = TIM1_IER_COMIE,
+			IRQ_Trig = TIM1_IER_TIE,
+			IRQ_Break = TIM1_IER_BIE
 		};
 		
 		enum Events
 		{
-			UpdEv = TIM1_EGR_UG,
-			Ch1Ev = TIM1_EGR_CC1G,
-			Ch2Ev = TIM1_EGR_CC2G,
-			Ch3Ev = TIM1_EGR_CC3G,
-			TrigEv = TIM1_EGR_TG
-		};
-		
-		enum Channel
-		{
-			Ch1,
-			Ch2,
-			Ch3,
-			Ch4,
-			All_Ch
+			Ev_Update = TIM1_EGR_UG,
+			Ev_Ch1 = TIM1_EGR_CC1G,
+			Ev_Ch2 = TIM1_EGR_CC2G,
+			Ev_Ch3 = TIM1_EGR_CC3G,
+			Ev_Trig = TIM1_EGR_TG
 		};
 
 		enum ActiveLevel
@@ -353,26 +356,26 @@ namespace Mcudrv
 
 	namespace T2
 	{
+		using namespace Timers;
 		enum Div
 			{
-				Div1,
-				Div2,
-				Div4,
-				Div8,
-				Div16,
-				Div32,
-				Div64,
-				Div128,
-				Div256,
-				Div512,
-				Div1024,
-				Div2048,
-				Div4096,
-				Div8192,
-				Div16384,
-				Div32768,
+				Div_1,
+				Div_2,
+				Div_4,
+				Div_8,
+				Div_16,
+				Div_32,
+				Div_64,
+				Div_128,
+				Div_256,
+				Div_512,
+				Div_1024,
+				Div_2048,
+				Div_4096,
+				Div_8192,
+				Div_16384,
+				Div_32768,
 			};
-
 		enum Cfg
 			{
 				Default = 0,
@@ -384,30 +387,20 @@ namespace Mcudrv
 				GPbit = TIM2_CR1_OPM,	// General purpose use
 				ARPE = TIM2_CR1_ARPE   // TIM2_ARR register is buffered through a preload register
 			};
-
 		enum Ints
 			{
-				UpdInt = TIM2_IER_UIE,
-				Ch1Int = TIM2_IER_CC1IE,
-				Ch2Int = TIM2_IER_CC2IE,
-				Ch3Int = TIM2_IER_CC3IE
+				IRQ_Update = TIM2_IER_UIE,
+				IRQ_Ch1 = TIM2_IER_CC1IE,
+				IRQ_Ch2 = TIM2_IER_CC2IE,
+				IRQ_Ch3 = TIM2_IER_CC3IE
 			};
 		enum Events
 		{
-			UpdEv = TIM2_EGR_UG,
-			Ch1Ev = TIM2_EGR_CC1G,
-			Ch2Ev = TIM2_EGR_CC2G,
-			Ch3Ev = TIM2_EGR_CC3G
+			Ev_Update = TIM2_EGR_UG,
+			Ev_Ch1 = TIM2_EGR_CC1G,
+			Ev_Ch2 = TIM2_EGR_CC2G,
+			Ev_Ch3 = TIM2_EGR_CC3G
 		};
-
-		enum Channel
-			{
-				Ch1,
-				Ch2,
-				Ch3,
-				All_Ch
-			};
-
 		enum ChannelType
 		{
 			Output,
@@ -415,13 +408,11 @@ namespace Mcudrv
 			InputMap0 = Input,  //ICx is mapped on TI1FPx
 			InputMap1,  //ICx is mapped on TI2FPx
 		};
-
 		enum ActiveLevel
 			{
 				ActiveHigh,
 				ActiveLow
 			};
-		
 		enum ChannelCfgIn
 		{
 			In_NoFilter,
@@ -439,7 +430,6 @@ namespace Mcudrv
 			In_Presc_4ev = 0x02 << 2u,			// 10: Capture is done once every 4 events
 			In_Presc_8ev = 0x03 << 2u,			// 11: Capture is done once every 8 events
 		};
-
 		enum ChannelCfgOut
 		{
 			Out_Frozen = 0,						// 000: Frozen - The comparison between the output compare register TIMx_CCRx and the counter 
@@ -458,173 +448,206 @@ namespace Mcudrv
 			Out_PreloadEnable = 0x01 << 3u,			// Preload register on TIMx_CCRx enabled. Read/write operations access the preload register. 
 														// TIMx_CCRx preload value is loaded in the shadow register at each update event.
 		};
-	
-		class Timer2
+
+		namespace Internal
 		{
-		public:
-			static void Init(const Div divider, const Cfg config)
+			template<uint16_t>
+			struct TypeOfTimer;
+			template<>
+			struct TypeOfTimer<TIM2_BaseAddress>
 			{
-				TIM2->PSCR = divider;
-				TIM2->CR1 = config;
-			}
-		
-			#pragma inline=forced
-			static void Enable()
+				typedef TIM2_TypeDef type;
+			};
+			template<>
+			struct TypeOfTimer<TIM3_BaseAddress>
 			{
-				TIM2->CR1 |= TIM4_CR1_CEN;
-			}
-			#pragma inline=forced
-			static void Disable()
-			{
-				TIM2->CR1 &= ~TIM4_CR1_CEN;
-			}
-			#pragma inline=forced
-			static void EnableInterrupt(const Ints mask)
-			{
-				TIM2->IER |= mask;
- 			}
-			#pragma inline=forced
-			static void DisableInterrupt(const Ints mask)
-			{
-				TIM2->IER &= ~mask;
-			}
-			#pragma inline=forced
-			static void TriggerEvent(const Events ev)
-			{
-				TIM2->EGR |= ev;
-			}
-			#pragma inline=forced
-			static bool CheckIntStatus(const Ints flag)
-			{
-				return TIM2->SR1 & flag;
-			}
-			#pragma inline=forced
-			static void ClearIntFlag(const Ints flag)
-			{
-				TIM2->SR1 &= ~flag;
-			}
-			#pragma inline=forced
-			static void WriteCounter(const uint16_t c)	//Need to stop Timer
-			{
-	//			Disable();
-				TIM2->CNTRH = c >> 8;
-				TIM2->CNTRL = c;
-	//			Enable();
-			}
-		
-			#pragma diag_suppress=Pe940
-			static uint16_t ReadCounter()
-			{
-				__asm("LD A, L:0x530a\n"
-					"LD XH, A\n"
-					"LD A, L:0x530b\n"
-					"LD XL, A\n");
-			}
-			#pragma diag_default=Pe940
+				typedef TIM3_TypeDef type;
+			};
 
-			#pragma inline=forced
-			static void WriteAutoReload(const uint16_t c)
+			template<uint16_t BaseAddr>
+			class Timer
 			{
-				TIM2->ARRH = c >> 8;
-				TIM2->ARRL = c;
-			}
+			private:
+				typedef typename TypeOfTimer<BaseAddr>::type TIM_TypeDef;
 
-			#pragma inline=forced
-			template <Channel Ch, ChannelType type, ChannelCfgIn cfg>
-			static void SetChannelCfg()
-			{
-				static_assert(type != Output, "error in __FUNC__");
-				if(Ch == All_Ch)
+				#pragma inline=forced
+				static TIM_TypeDef* Regs()
 				{
-					TIM2->CCMR1 = TIM2->CCMR2 = TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+					return reinterpret_cast<TIM_TypeDef*>(BaseAddr);
 				}
-				else *reinterpret_cast<volatile uint8_t*>(&TIM2->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
-			}
-				
-			#pragma inline=forced
-			template <Channel Ch, ChannelType type, ChannelCfgOut cfg>
-			static void SetChannelCfg()
-			{
-				static_assert(type == Output, "error in __FUNC__");
-				if(Ch == All_Ch)
+			public:
+				static void Init(const Div divider, const Cfg config)
 				{
-					TIM2->CCMR1 = TIM2->CCMR2 = TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+					Regs()->PSCR = divider;
+					Regs()->CR1 = config;
 				}
-				else *reinterpret_cast<volatile uint8_t*>(&TIM2->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
-			}
-			
-			#pragma inline=forced
-			template <Channel Ch, ActiveLevel level = ActiveHigh>
-			static void ChannelEnable()
-			{	
-				if(Ch == All_Ch)
+
+				#pragma inline=forced
+				static void Enable()
 				{
-					TIM2->CCER2 |= TIM2_CCER2_CC3E | (level << 1);
-					TIM2->CCER1 |= TIM2_CCER1_CC1E | (level << 1) | TIM2_CCER1_CC2E | ((level << 1) << 4);
+					Regs()->CR1 |= TIM2_CR1_CEN;
 				}
-				if (Ch == Ch3) TIM2->CCER2 |= TIM2_CCER2_CC3E | (level << 1);
-				if (Ch == Ch2) TIM2->CCER1 |= TIM2_CCER1_CC2E | ((level << 1) << 4);
-				if (Ch == Ch1) TIM2->CCER1 |= TIM2_CCER1_CC1E | (level << 1);
-			}
-
-			#pragma inline=forced
-			template <Channel Ch>
-			static void ChannelDisable()
-			{
-//				BOOST_STATIC_ASSERT(Ch != All_Ch);
-				if(Ch == All_Ch)
+				#pragma inline=forced
+				static void Disable()
 				{
-					TIM2->CCER2 = TIM2->CCER1 = 0;
+					Regs()->CR1 &= ~TIM2_CR1_CEN;
 				}
-				if (Ch == Ch3) TIM2->CCER2 &= ~0x0F;
-				if (Ch == Ch2) TIM2->CCER1 &= ~(0x0F << 4);
-				if (Ch == Ch1) TIM2->CCER1 &= ~0x0F;
-			}
+				#pragma inline=forced
+				static void EnableInterrupt(const Ints mask)
+				{
+					Regs()->IER |= mask;
+				}
+				#pragma inline=forced
+				static void DisableInterrupt(const Ints mask)
+				{
+					Regs()->IER &= ~mask;
+				}
+				#pragma inline=forced
+				static void TriggerEvent(const Events ev)
+				{
+					Regs()->EGR |= ev;
+				}
+				#pragma inline=forced
+				static bool CheckIntStatus(const Ints flag)
+				{
+					return Regs()->SR1 & flag;
+				}
+				#pragma inline=forced
+				static void ClearIntFlag(const Ints flag)
+				{
+					Regs()->SR1 &= ~flag;
+				}
+				static void WriteCounter(const uint16_t c)	//Need to stop Timer
+				{
+		//			Disable();
+					Regs()->CNTRH = c >> 8;
+					Regs()->CNTRL = c;
+		//			Enable();
+				}
+				static uint16_t ReadCounter()
+				{
+					uint8_t msb = Regs()->CNTRH;
+					uint8_t lsb = Regs()->CNTRL;
+					return lsb | (msb << 8);
+				}
+				static void WriteAutoReload(const uint16_t c)
+				{
+					Regs()->ARRH = c >> 8;
+					Regs()->ARRL = c;
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static void WriteCompareWord(const uint16_t c)
-			{
-				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1H + Ch * 2) = c >> 8;
-				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2) = c;
-			}
+				#pragma inline=forced
+				template <Channel Ch, ChannelType type, ChannelCfgIn cfg>
+				static void SetChannelCfg()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					static_assert(type != Output, "error in __FUNC__");
+					if(Ch == All_Ch)
+					{
+						Regs()->CCMR1 = Regs()->CCMR2 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+						if(BaseAddr == TIM2_BaseAddress) TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+					}
+					else *reinterpret_cast<volatile uint8_t*>(&Regs()->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static void WriteCompareByte(const uint8_t c)
-			{
-				*reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2) = c;
-			}
+				#pragma inline=forced
+				template <Channel Ch, ChannelType type, ChannelCfgOut cfg>
+				static void SetChannelCfg()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					static_assert(type == Output, "error in __FUNC__");
+					if(Ch == All_Ch)
+					{
+						Regs()->CCMR1 = Regs()->CCMR2 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+						if(BaseAddr == TIM2_BaseAddress) TIM2->CCMR3 = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+					}
+					else *reinterpret_cast<volatile uint8_t*>(&Regs()->CCMR1 + Ch) = static_cast<uint8_t>(type) | static_cast<uint8_t>(cfg);
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static uint16_t ReadCompareWord()
-			{
-				return *reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H + Ch * 2);
-			}
+				#pragma inline=forced
+				template <Channel Ch, ActiveLevel level = ActiveHigh>
+				static void ChannelEnable()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					if(Ch == All_Ch)
+					{
+						if(BaseAddr == TIM2_BaseAddress) TIM2->CCER2 |= TIM2_CCER2_CC3E | (level << 1);
+						Regs()->CCER1 |= TIM2_CCER1_CC1E | (level << 1) | TIM2_CCER1_CC2E | ((level << 1) << 4);
+					}
+					if (Ch == Ch3) TIM2->CCER2 |= TIM2_CCER2_CC3E | (level << 1);
+					if (Ch == Ch2) Regs()->CCER1 |= TIM2_CCER1_CC2E | ((level << 1) << 4);
+					if (Ch == Ch1) Regs()->CCER1 |= TIM2_CCER1_CC1E | (level << 1);
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static uint8_t ReadCompareByte()
-			{
-				return *reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2);
-			}
+				#pragma inline=forced
+				template <Channel Ch>
+				static void ChannelDisable()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					if(Ch == All_Ch)
+					{
+						Regs()->CCER1 = 0;
+						if(BaseAddr == TIM2_BaseAddress) TIM2->CCER2 = 0;
+					}
+					if (Ch == Ch3) TIM2->CCER2 &= ~0x0F;
+					if (Ch == Ch2) Regs()->CCER1 &= ~(0x0F << 4);
+					if (Ch == Ch1) Regs()->CCER1 &= ~0x0F;
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static volatile uint16_t& GetCompareWord()
-			{
-				return *reinterpret_cast<volatile uint16_t*>(&TIM2->CCR1H + Ch * 2);
-			}
+				#pragma inline=forced
+				template<Channel Ch>
+				static void WriteCompareWord(const uint16_t c)
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					*reinterpret_cast<volatile uint8_t*>(&Regs()->CCR1H + Ch * 2) = c >> 8;
+					*reinterpret_cast<volatile uint8_t*>(&Regs()->CCR1L + Ch * 2) = c;
+				}
 
-			#pragma inline=forced
-			template<Channel Ch>
-			static volatile uint8_t& GetCompareByte()
-			{
-				return *reinterpret_cast<volatile uint8_t*>(&TIM2->CCR1L + Ch * 2);
-			}
-		}; //Timer2
+				#pragma inline=forced
+				template<Channel Ch>
+				static void WriteCompareByte(const uint8_t c)
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					*reinterpret_cast<volatile uint8_t*>(&Regs()->CCR1L + Ch * 2) = c;
+				}
+
+				#pragma inline=forced
+				template<Channel Ch>
+				static uint16_t ReadCompareWord()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					return *reinterpret_cast<volatile uint16_t*>(&Regs()->CCR1H + Ch * 2);
+				}
+
+				#pragma inline=forced
+				template<Channel Ch>
+				static uint8_t ReadCompareByte()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					return *reinterpret_cast<volatile uint8_t*>(&Regs()->CCR1L + Ch * 2);
+				}
+
+				#pragma inline=forced
+				template<Channel Ch>
+				static volatile uint16_t& GetCompareWord()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					return *reinterpret_cast<volatile uint16_t*>(&Regs()->CCR1H + Ch * 2);
+				}
+
+				#pragma inline=forced
+				template<Channel Ch>
+				static volatile uint8_t& GetCompareByte()
+				{
+					static_assert(!(Ch == Ch3 && BaseAddr == TIM3_BaseAddress), "Timer 3 have no Channel 3");
+					return *reinterpret_cast<volatile uint8_t*>(&Regs()->CCR1L + Ch * 2);
+				}
+			}; //Timer2-3
+		}//Internal
+		typedef Internal::Timer<TIM2_BaseAddress> Timer2;
+		typedef Internal::Timer<TIM3_BaseAddress> Timer3;
 	} //T2
+	namespace T3 = T2;
 
 	namespace T4
 	{
