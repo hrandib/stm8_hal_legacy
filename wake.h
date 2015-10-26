@@ -12,7 +12,6 @@
 
 #define INSTRUCTION_SET_VERSION 2
 #define WAKEDATABUFSIZE 64
-uint8_t debugVal;
 
 namespace Mcudrv
 {
@@ -37,20 +36,21 @@ namespace Mcudrv
 			#pragma location=".eeprom.noinit"
 			static uint16_t hvalue;// @ ".eeprom.noinit";
 			volatile static bool tenMinPassed;
-/*
+
 			_Pragma(VECTOR_ID(TIM4_OVR_UIF_vector))
-			__interrupt static void UpdIRQ()	//Fcpu/256/128 ~= 61 Hz
+			__interrupt static void UpdIRQ()	//Fcpu/256/128 ~= 61 Hz for 2 MHz HSI
 			{
 				static uint16_t tempCounter;
 				T4::Timer4::ClearIntFlag();
 				if(++tempCounter == 36621)
 				{
+					Led1::Toggle();
 					tempCounter = 0;
 					SetTenMinutesFlag();
 				}
 				if(Timer_cb) Timer_cb();
 			}
-			*/
+
 		public:
 			static void (*Timer_cb)();
 			#pragma inline=forced
@@ -59,7 +59,7 @@ namespace Mcudrv
 				using namespace T4;
 				Itc::SetPriority(TIM4_OVR_UIF_vector, Itc::prioLevel_2_middle);
 				Timer4::Init(Div_128, CEN);
-		//		Timer4::EnableInterrupt();
+				Timer4::EnableInterrupt();
 			}
 			#pragma inline=forced
 			static void SetTimerCallback(void (*t_cb)())
@@ -105,7 +105,7 @@ namespace Mcudrv
 				uint8_t i = GetIndex();
 				uint8_t tmp = eebuf[i].lvalue + 1;
 				Unlock<Eeprom>();
-				if (IsUnlocked<Eeprom>())
+				if(IsUnlocked<Eeprom>())
 				{
 					if (i != 15) eebuf[i + 1].lvalue = tmp;
 					else eebuf[0].lvalue = tmp;
@@ -176,7 +176,7 @@ namespace Mcudrv
 			ERR_NR,	//no replay
 			ERR_NC,	//no carrier
 			ERR_ADDRFMT,	//new address is wrong
-			ERR_EEPROMUNLOCK //EEPROM didn't unlock
+			ERR_EEPROMUNLOCK //EEPROM hasn't unlocked
 		};
 
 		enum DeviceType
@@ -194,8 +194,8 @@ namespace Mcudrv
 
 		enum AddrType
 		{
-			addrNode,
-			addrGroup
+			addrGroup,
+			addrNode
 		};
 
 		struct NullModule
@@ -296,9 +296,9 @@ namespace Mcudrv
 			typedef Uarts::Uart Uart;
 			enum { SingleWireMode = (Uart::BaseAddr == UART1_BaseAddress ? Uarts::SingleWireMode : 0) };
 			#pragma location=".eeprom.data"
-			static uint8_t nodeAddr_nv;// @ ".eeprom.data";
+			static volatile uint8_t nodeAddr_nv;// @ ".eeprom.data";
 			#pragma location=".eeprom.data"
-			static uint8_t groupAddr_nv;// @ ".eeprom.data";
+			static volatile uint8_t groupAddr_nv;// @ ".eeprom.data";
 			static volatile uint8_t prev_byte;
 			static volatile State state;				//Current tranfer mode
 			static volatile uint8_t ptr;				//data pointer in Rx buffer
@@ -307,29 +307,35 @@ namespace Mcudrv
 
 			static void SetAddress(const AddrType nodeOrGroup)
 			{
-				if(pdata.n == 2 && pdata.addr)
+				if(pdata.n == 2 && pdata.addr)	//data length correct and no broadcast
 				{
 					if(nodeOrGroup ? CheckNodeAddress() : CheckGroupAddress())
 					{
 						using namespace Mem;
 						uint8_t tempAddr = pdata.buf[0];
-						Unlock<Eeprom>();
-						if (IsUnlocked<Eeprom>())
+						pdata.buf[0] = ERR_NO;
+						pdata.buf[1] = tempAddr;
+						if(tempAddr != (nodeOrGroup ? nodeAddr_nv : groupAddr_nv)) //no write if address equal
 						{
-							if(nodeOrGroup) nodeAddr_nv = tempAddr;
-							else groupAddr_nv = tempAddr;
-							pdata.buf[0] = ERR_NO;
-							pdata.buf[1] = tempAddr;
+							Unlock<Eeprom>();
+							if (IsUnlocked<Eeprom>())
+							{
+								if(nodeOrGroup) nodeAddr_nv = tempAddr;
+								else groupAddr_nv = tempAddr;
+							}
+							else pdata.buf[0] = ERR_EEPROMUNLOCK;
+							Lock<Eeprom>();
 						}
-						else pdata.buf[0] = ERR_EEPROMUNLOCK;
-						Lock<Eeprom>();
 					}
 					else
+					{
 						pdata.buf[0] = ERR_ADDRFMT;
+					}
 				}
 				else
 				{
 					pdata.buf[0] = ERR_PA;
+					pdata.n = 2;
 				}
 				if(pdata.buf[0]) pdata.buf[1] = 0;
 			}
@@ -356,22 +362,20 @@ namespace Mcudrv
 		//Single Wire mode is default for UART1
 				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), 9600UL>();
 				ControlPin::template SetConfig<GpioBase::Out_PushPull_fast>();
-//				moduleList::Init();
-//				OpTime::Init();
+				moduleList::Init();
+				OpTime::Init();
 //				Wdg::Iwdg::Enable(Wdg::P_1s);
 				Uart::EnableInterrupt(IrqDefault);
-
 			}
-
 			#pragma inline=forced
 			static void Process()
 			{
-//				if (OpTime::GetTenMinitesFlag() && !IsActive())
-//				{
-//					OpTime::ClearTenMinutesFlag();
-//					moduleList::SaveState();		//Save to EEPROM
-//					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
-//				}
+				if(OpTime::GetTenMinitesFlag() && !IsActive())
+				{
+					OpTime::ClearTenMinutesFlag();
+					moduleList::SaveState();		//Save to EEPROM
+					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
+				}
 //				Wdg::Iwdg::Refresh();
 				if(cmd)
 				{
@@ -385,7 +389,6 @@ namespace Mcudrv
 					}
 						break;
 					case C_ECHO:
-					Led2::Toggle();
 						break;
 					case C_GETINFO:
 					{
@@ -437,7 +440,7 @@ namespace Mcudrv
 						break;
 					case C_GETOPTIME:
 					{
-						if (!pdata.n)
+						if(!pdata.n)
 						{
 							pdata.buf[0] = Wk::ERR_NO;
 							OpTime::Get(&pdata.buf[1]);
@@ -480,7 +483,8 @@ namespace Mcudrv
 						break;
 					default: moduleList::Process();
 				}
-					if(pdata.addr == nodeAddr_nv)
+					uint8_t taddr = pdata.addr;
+					if((taddr && cmd == C_SETNODEADDRESS) || taddr == nodeAddr_nv)
 					{
 						Send();
 					}
@@ -725,12 +729,12 @@ namespace Mcudrv
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<moduleList, baud, DEpin, mode>::nodeAddr_nv = 127;
+		volatile uint8_t Wake<moduleList, baud, DEpin, mode>::nodeAddr_nv = 127;
 		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
 				 Mode mode>
-		uint8_t Wake<moduleList, baud, DEpin, mode>::groupAddr_nv = 95;
+		volatile uint8_t Wake<moduleList, baud, DEpin, mode>::groupAddr_nv = 95;
 		template<typename moduleList,
 				 Uarts::BaudRate baud,
 				 typename DEpin,
