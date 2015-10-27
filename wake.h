@@ -42,9 +42,8 @@ namespace Mcudrv
 			{
 				static uint16_t tempCounter;
 				T4::Timer4::ClearIntFlag();
-				if(++tempCounter == 36621)
+				if(++tempCounter == (600U * 61))
 				{
-					Led1::Toggle();
 					tempCounter = 0;
 					SetTenMinutesFlag();
 				}
@@ -206,6 +205,7 @@ namespace Mcudrv
 			static void SaveState() { }
 			static void On() { }
 			static void Off() { }
+			static uint8_t GetDeviceFeatures(uint8_t) {return 0;}
 		};
 
 		template<typename Module1, typename Module2 = NullModule, typename Module3 = NullModule,
@@ -288,7 +288,7 @@ namespace Mcudrv
 
 		template<typename moduleList = ModuleList<NullModule>,
 				 Uarts::BaudRate baud = 9600UL,
-				 typename ControlPin = Nullpin,
+				 typename DriverEnable = Nullpin,
 				 Mode mode = Slave>	//TODO: Master mode
 		class Wake : WakeData
 		{
@@ -305,7 +305,7 @@ namespace Mcudrv
 			static volatile bool activity;			//Transaction activity flag
 			static Crc::Crc8 crc;
 
-			static void SetAddress(const AddrType nodeOrGroup)
+			static void SetAddress(const AddrType nodeOrGroup) //and get address
 			{
 				if(pdata.n == 2 && pdata.addr)	//data length correct and no broadcast
 				{
@@ -331,6 +331,11 @@ namespace Mcudrv
 					{
 						pdata.buf[0] = ERR_ADDRFMT;
 					}
+				}
+				else if(!pdata.n) //Get address
+				{
+					pdata.buf[0] = groupAddr_nv;
+					pdata.n = 1;
 				}
 				else
 				{
@@ -360,11 +365,12 @@ namespace Mcudrv
 			{
 				using namespace Uarts;
 		//Single Wire mode is default for UART1
-				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), 9600UL>();
-				ControlPin::template SetConfig<GpioBase::Out_PushPull_fast>();
+				Uart::template Init<Cfg(Uarts::DefaultCfg | (Cfg)SingleWireMode), baud>();
+				DriverEnable::template SetConfig<GpioBase::Out_PushPull_fast>();
+				DriverEnable::Clear();
 				moduleList::Init();
 				OpTime::Init();
-//				Wdg::Iwdg::Enable(Wdg::P_1s);
+				Wdg::Iwdg::Enable(Wdg::P_1s);
 				Uart::EnableInterrupt(IrqDefault);
 			}
 			#pragma inline=forced
@@ -376,7 +382,7 @@ namespace Mcudrv
 					moduleList::SaveState();		//Save to EEPROM
 					OpTime::CountInc();			//Refresh Uptime counter every 10 mins
 				}
-//				Wdg::Iwdg::Refresh();
+				Wdg::Iwdg::Refresh();
 				if(cmd)
 				{
 				switch(cmd)
@@ -398,7 +404,7 @@ namespace Mcudrv
 							pdata.buf[1] = INSTRUCTION_SET_VERSION;
 							pdata.n = 2;
 						}
-						else if (pdata.n == 1)	//Info for each logical device
+						else if(pdata.n == 1)	//Info for each logical device
 						{
 							if(pdata.buf[0] < 7)
 							{
@@ -484,9 +490,10 @@ namespace Mcudrv
 					default: moduleList::Process();
 				}
 					uint8_t taddr = pdata.addr;
-					if((taddr && cmd == C_SETNODEADDRESS) || taddr == nodeAddr_nv)
+					if(taddr && cmd == C_SETNODEADDRESS || taddr == nodeAddr_nv)
 					{
 						Send();
+						Green::Toggle();
 					}
 					cmd = Wk::C_NOP;
 				}
@@ -501,15 +508,15 @@ namespace Mcudrv
 			static void Send()
 			{
 				using namespace Uarts;
-				ControlPin::Set(); //Switch to TX
+				DriverEnable::Set(); //Switch to TX
 				char data_byte = FEND;
 				crc.Reset(CRC_INIT); //инициализация CRC,
 				crc(data_byte);		//обновление CRC
 				Uart::Regs()->DR = data_byte;
 				state = ADDR;
 				prev_byte = TFEND;
-				Uart::EnableInterrupt(IrqTxEmpty);
 				Uart::DisableInterrupt(IrqRxne);
+				Uart::EnableInterrupt(IrqTxEmpty);
 			}
 
 #if defined (STM8S103) || defined (STM8S003)
@@ -522,13 +529,15 @@ namespace Mcudrv
 				using namespace Uarts;
 				if(Uart::IsEvent(EvTxComplete))
 				{
+
 					Uart::ClearEvent(EvTxComplete);
 					Uart::ClearEvent(EvRxne);
 					Uart::EnableInterrupt(IrqRxne);
-					ControlPin::Clear();		//Switch to RX
+					DriverEnable::Clear();		//Switch to RX
 					activity = false;
+
 				}
-				else //if (Uart::IsEvent(Uarts::TxEmpty))
+				else //if(Uart::IsEvent(Uarts::TxEmpty))
 				{
 					char data_byte;
 					if(prev_byte == FEND)               //если производится стаффинг,
@@ -585,8 +594,8 @@ namespace Mcudrv
 						}
 					default:
 						{
-							state = SEND_IDLE;          //передача пакета завершена
 							Uart::DisableInterrupt(IrqTxEmpty);
+							state = SEND_IDLE;          //передача пакета завершена
 							return;
 						}
 					}
@@ -607,6 +616,7 @@ namespace Mcudrv
 #endif
 			__interrupt static void RxISR()
 			{
+
 				using namespace Uarts;
 				bool error = Uart::IsEvent(static_cast<Events>(EvParityErr | EvFrameErr | EvNoiseErr | EvOverrunErr)); //чтение флагов ошибок
 				uint8_t data_byte = Uart::Regs()->DR;              //чтение данных
@@ -684,13 +694,13 @@ namespace Mcudrv
 							break;
 						}
 						pdata.cmd = data_byte;          //сохранение команды
-						crc(data_byte); //обновление CRC
+						crc(data_byte);				//обновление CRC
 						state = NBT;           //переходим к приему количества байт
 						break;
 					}
-				case NBT:                      //-----> ожидание приема количества байт
+				case NBT:					//-----> ожидание приема количества байт
 					{
-						if(data_byte >= WAKEDATABUFSIZE)           //если количество байт > bufsize,
+						if(data_byte >= WAKEDATABUFSIZE)	//если количество байт > bufsize,
 						{
 							state = WAIT_FEND;	//TODO:Флаг ошибки переполнения буфера
 							cmd = C_ERR;		//то ошибка
@@ -722,6 +732,7 @@ namespace Mcudrv
 						break;
 					}
 				}
+
 			}
 		};
 

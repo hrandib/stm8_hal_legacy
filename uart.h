@@ -139,8 +139,13 @@ namespace Uarts
 			Regs()->CR5 = (static_cast<uint32_t>(config) >> 24) & 0xFF;
 			Regs()->CR2 = (static_cast<uint32_t>(config) >> 8) & 0xFF;
 
-			TxPin::SetConfig<GpioBase::Out_PushPull_fast>();
-			RxPin::SetConfig<GpioBase::In_Pullup>();
+			if(config & SingleWireMode)
+				TxPin::SetConfig<GpioBase::In_Pullup>();
+			else
+			{
+				TxPin::SetConfig<GpioBase::Out_PushPull_fast>();
+				RxPin::SetConfig<GpioBase::In_Pullup>();
+			}
 		}
 
 		#pragma inline=forced
@@ -161,10 +166,12 @@ namespace Uarts
 //			return Regs()->CR2 & IrqTxEmpty;
 //		}
 
+		//Only for TX Complete and RX Not Empty events
 		#pragma inline=forced
 		static void ClearEvent(const Events event)
 		{
-			Regs()->SR &= ~event;
+			if(event == EvTxComplete) Regs()->SR = ~event;
+			else if(event == EvRxne) uint8_t dummy = Uart::Regs()->DR;
 		}
 
 		#pragma inline=forced
