@@ -17,7 +17,7 @@ namespace Mcudrv
 {
 	namespace Wk
 	{
-		void Empty_cb() { }
+
 	//			---=== Operation time counter ===---
 		class OpTime
 		{
@@ -51,7 +51,7 @@ namespace Mcudrv
 			}
 
 		public:
-			static void (*Timer_cb)();
+			static void (*volatile Timer_cb)();
 			#pragma inline=forced
 			static void Init()
 			{
@@ -117,7 +117,7 @@ namespace Mcudrv
 		OpTime::EepromBuf_t OpTime::eebuf[16];
 		uint16_t OpTime::hvalue;
 		volatile bool OpTime::tenMinPassed;
-		void (*OpTime::Timer_cb)();
+		void (*volatile OpTime::Timer_cb)();
 
 	//			---=== Wake main definitions ===---
 
@@ -288,7 +288,7 @@ namespace Mcudrv
 
 		template<typename moduleList = ModuleList<NullModule>,
 				 Uarts::BaudRate baud = 9600UL,
-				 typename DriverEnable = Nullpin,
+				 typename DriverEnable = Pd6,
 				 Mode mode = Slave>	//TODO: Master mode
 		class Wake : WakeData
 		{
@@ -358,7 +358,6 @@ namespace Mcudrv
 				return taddr == (~pdata.buf[1] & 0xFF)
 						&& taddr > 79 && taddr < 96;
 			}
-
 		public:
 			#pragma inline=forced
 			static void Init()
@@ -413,6 +412,7 @@ namespace Mcudrv
 								{
 									pdata.buf[0] = ERR_NO;
 									pdata.buf[1] = moduleList::GetDeviceFeatures(deviceMask);
+									pdata.n = 2;
 								}
 								else //device not available
 								{
